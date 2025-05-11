@@ -2,12 +2,40 @@
 
 ## Background
 
-This document provides a comprehensive data dictionary and model documentation for the Order Service database. The database is designed to manage trading orders within a financial system, including order management, order types, status tracking, and organization via blotters.
+This document provides requirements for the Order Service database. The database is designed to manage trading orders within a financial system, including order management, order types, status tracking, and organization via blotters.  
+
+This microservice will be deployed on Kubernetes 1.33.
+
+This microservice is part of the GlobeCo suite of applications for benchmarking Kubernetes autoscaling.
 
 
 ## Technology
 
+| Technology | Version | Notes |
+|---------------------------|----------------|---------------------------------------|
+| Java | 21 | |
+| Spring Boot | 3.4.5 | |
+| Spring Dependency Mgmt | 1.1.7 | Plugin for dependency management |
+| Spring Boot Starter Web | (from BOM) | For REST API |
+| Spring Boot Starter Data JPA | (from BOM) | For JPA/Hibernate ORM |
+| Spring Boot Starter Actuator | (from BOM) | For monitoring/management |
+| Flyway Core | (from BOM) | Database migrations |
+| Flyway Database PostgreSQL| (from BOM) | PostgreSQL-specific Flyway support |
+| PostgreSQL JDBC Driver | (from BOM) | Runtime JDBC driver |
+| JUnit Platform Launcher | (from BOM) | For running tests |
+| Spring Boot Starter Test | (from BOM) | For testing |
+| PostgreSQL (Database) | 17 | As specified in [globeco-security-service-postgresql](https://github.com/kasbench/globeco-order-service-postgresql) |
 
+Notes:
+- (from BOM) means the version is managed by the Spring Boot BOM (Bill of Materials) and will match the Spring Boot version unless overridden.
+- All dependencies are managed via Maven Central.
+- The project uses Gradle as the build tool.
+
+## Database Information
+
+The database is the default `postgres` database.
+The schema is the default `public` schema.
+The owner of all database objects is `postgres`.
 
 ## Data Dictionary
 

@@ -1,0 +1,27 @@
+# Step-by-Step Instructions
+
+Please perform each step when instructed.  Only perform one step at a time.
+
+1. Configure the project to connect to the PostgreSQL database on host `globeco-order-service-postgresql`  port 5432 and database `postgres`. Please add an entry with this prompt and your actions in the cursor-log.md  file following the instructions in the file.
+2. Please implement the APIs for status using the requirements provided in @requirements.md.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+3. Please generate the unit tests for all the code you created in the previous step.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+4. Please update the README.md file with an introduction and full documentation on the status data model and API.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+5. Please create an OpenAPI schema `openapi.yaml' in the project root.  Please include the full specification for the status API.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+6. Please implement the APIs for orderType using the requirements provided in @requirements.md.  Use the code for status as an example.  Strive for consistency.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+7. Please create unit tests for the code you created in the previous step.  Please use the code you created in the previous unit tests as an example.  Strive for consistency.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+8. Please add documentation for the orderType data model and API to readme.md.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+9. Please update the openapi schema `openapi.yaml` with the spec for orderType.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+
+10. Please implement the APIs for blotter using the requirements provided in @requirements.md.  Use the code for status as an example.  Strive for consistency.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+11. Please create unit tests for the code you created in the previous step.  Please use the code you created in the previous unit tests as an example.  Strive for consistency.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+12. Please add documentation for the blotter data model and API to readme.md.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+13. Please update the openapi schema `openapi.yaml` with the spec for blotter.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+
+14. Please implement the APIs for order using the requirements provided in @requirements.md.  Use the code for status as an example.  Strive for consistency.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+15. Please create unit tests for the code you created in the previous step.  Please use the code you created in the previous unit tests as an example.  Strive for consistency.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+16. Please add documentation for the order data model and API to readme.md.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+17. Please update the openapi schema `openapi.yaml` with the spec for order.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+18. Please create a Dockerfile for this application.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+19. We will be deploying this service to Kubernetes.  Please implement liveness, readiness, and startup health checks. 
+20. Please create all the files necessary to deploy to this application as a service to Kubernetes.  Please include the liveness, readiness, and startup probes you just created.  The deployment should start with one instance of the service and should scale up to a maximum of 100 instances.  It should have up 100 millicores and 200 MiB of memory.  The liveness probe should have a timeout (`timeoutSeconds`) of 240 seconds.  The name of the service is `globeco-order-service` in the `globeco` namespace.  You do not need to create the namespace. Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+21. Please document the health checks (liveness, readiness/startup) in the README.md file and the openapi.yaml OpenAPI spec.  Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
