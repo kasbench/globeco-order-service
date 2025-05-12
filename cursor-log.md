@@ -11,3 +11,18 @@ Actions:
 1. Added PostgreSQL datasource configuration to src/main/resources/application.properties for host globeco-order-service-postgresql, port 5432, database postgres, user postgres, and no password.
 2. Logged this prompt and these actions in cursor-log.md following the required format.
 
+
+Prompt: Configure Flyway with the same configuration as in step 1.  Please add an entry with this prompt and your actions in the cursor-log.md  file following the instructions in the file.
+Actions:
+1. Verified that the datasource configuration for PostgreSQL is present in src/main/resources/application.properties.
+2. Ensured Flyway is configured to use the same PostgreSQL connection settings (host globeco-order-service-postgresql, port 5432, database postgres, user postgres, no password) in application.properties.
+3. Logged this prompt and these actions in cursor-log.md following the required format.
+
+
+Prompt: Create a Flyway migration to deploy the schema for this project. The schema is in @order-service.sql.
+Actions:
+1. Located the schema definition in documentation/order-service.sql.
+2. Created the initial Flyway migration file src/main/resources/db/migration/V1__init_schema.sql with the schema DDL, omitting CREATE DATABASE and OWNER statements.
+3. Ensured all tables and constraints from the schema are included in the migration file.
+4. Logged this prompt and these actions in cursor-log.md following the required format.
+
