@@ -4,17 +4,17 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "status")
+@Table(name = "order_type")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Status {
+public class OrderType {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @Column(length = 20, nullable = false)
+    @Column(length = 10, nullable = false)
     private String abbreviation;
 
     @Column(length = 60, nullable = false)
