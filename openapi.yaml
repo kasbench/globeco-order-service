@@ -1,0 +1,174 @@
+openapi: 3.0.3
+info:
+  title: GlobeCo Order Service - Status API
+  version: 1.0.0
+  description: |
+    OpenAPI specification for the Status API in the GlobeCo Order Service.
+    Provides endpoints to manage order status values.
+servers:
+  - url: /api/v1
+paths:
+  /statuses:
+    get:
+      summary: List all statuses
+      operationId: listStatuses
+      tags: [Status]
+      responses:
+        '200':
+          description: List of all statuses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatusDTO'
+    post:
+      summary: Create a new status
+      operationId: createStatus
+      tags: [Status]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusPostDTO'
+      responses:
+        '200':
+          description: The created status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /status/{id}:
+    get:
+      summary: Get a status by ID
+      operationId: getStatusById
+      tags: [Status]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusDTO'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update an existing status
+      operationId: updateStatus
+      tags: [Status]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusDTO'
+      responses:
+        '200':
+          description: The updated status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete a status by ID
+      operationId: deleteStatus
+      tags: [Status]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: version
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Status deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  schemas:
+    StatusDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        abbreviation:
+          type: string
+          example: NEW
+        description:
+          type: string
+          example: New
+        version:
+          type: integer
+          example: 1
+      required: [id, abbreviation, description, version]
+    StatusPostDTO:
+      type: object
+      properties:
+        abbreviation:
+          type: string
+          example: NEW
+        description:
+          type: string
+          example: New
+        version:
+          type: integer
+          example: 1
+      required: [abbreviation, description, version]
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Not found
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Bad request
+    Conflict:
+      description: Conflict (e.g., version mismatch)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Version mismatch or resource in use 
