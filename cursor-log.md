@@ -26,3 +26,10 @@ Actions:
 3. Ensured all tables and constraints from the schema are included in the migration file.
 4. Logged this prompt and these actions in cursor-log.md following the required format.
 
+
+Prompt: Create a Flyway migration for the blotter data in #### Initialization Data for `blotter`
+Actions:
+1. Reviewed the requirements for the initialization data for the blotter table.
+2. Created the Flyway migration file src/main/resources/db/migration/V2__blotter_init_data.sql to insert the required rows: Default, Equity, Fixed Income, Hold, Crypto (all with version 1).
+3. Logged this prompt and these actions in cursor-log.md following the required format.
+
