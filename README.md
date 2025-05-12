@@ -261,3 +261,124 @@ Response: HTTP 204 No Content
 - The `version` field is used for optimistic locking. Deletion will fail with a 409 Conflict if the version does not match.
 - Order types cannot be deleted if they are referenced by any orders.
 - Standard error responses (e.g., 404 Not Found, 400 Bad Request, 409 Conflict) are used as appropriate.
+
+---
+
+## Blotter Data Model and API Documentation
+
+### Introduction
+The **Blotter** resource in the GlobeCo Order Service represents a record grouping financial transactions, typically used to organize and group orders. This API allows clients to list, create, update, and delete blotter records, which are referenced by orders to indicate their grouping.
+
+### Blotter Data Model
+| Field   | Type    | Nullable | Description                                 |
+|---------|---------|----------|---------------------------------------------|
+| id      | Integer | No       | Unique identifier for the blotter           |
+| name    | String  | No       | Name of the blotter                         |
+| version | Integer | No       | Optimistic locking version number           |
+
+#### Example Blotter Values
+| name         | version |
+|--------------|---------|
+| Default      | 1       |
+| Equity       | 1       |
+| Fixed Income | 1       |
+| Hold         | 1       |
+| Crypto       | 1       |
+
+### Blotter API Endpoints
+
+| Method | Path                                 | Request Body         | Response Body        | Description                       |
+|--------|--------------------------------------|---------------------|----------------------|-----------------------------------|
+| GET    | /api/v1/blotters                     |                     | [BlotterDTO]         | List all blotters                 |
+| GET    | /api/v1/blotter/{id}                 |                     | BlotterDTO           | Get a blotter by ID               |
+| POST   | /api/v1/blotters                     | BlotterDTO (POST)    | BlotterDTO           | Create a new blotter              |
+| PUT    | /api/v1/blotter/{id}                 | BlotterDTO (PUT)     | BlotterDTO           | Update an existing blotter        |
+| DELETE | /api/v1/blotter/{id}?version={version}|                     |                      | Delete a blotter by ID            |
+
+#### BlotterDTO for GET and PUT
+```
+{
+  "id": 1,
+  "name": "Default",
+  "version": 1
+}
+```
+
+#### BlotterDTO for POST
+```
+{
+  "name": "Default",
+  "version": 1
+}
+```
+
+#### Example: Get All Blotters
+Request:
+```
+GET /api/v1/blotters
+```
+Response:
+```
+[
+  {
+    "id": 1,
+    "name": "Default",
+    "version": 1
+  },
+  ...
+]
+```
+
+#### Example: Create Blotter
+Request:
+```
+POST /api/v1/blotters
+Content-Type: application/json
+
+{
+  "name": "Equity",
+  "version": 1
+}
+```
+Response:
+```
+{
+  "id": 2,
+  "name": "Equity",
+  "version": 1
+}
+```
+
+#### Example: Update Blotter
+Request:
+```
+PUT /api/v1/blotter/2
+Content-Type: application/json
+
+{
+  "id": 2,
+  "name": "Equity (updated)",
+  "version": 2
+}
+```
+Response:
+```
+{
+  "id": 2,
+  "name": "Equity (updated)",
+  "version": 2
+}
+```
+
+#### Example: Delete Blotter
+Request:
+```
+DELETE /api/v1/blotter/2?version=2
+```
+Response: HTTP 204 No Content
+
+### Notes
+- All endpoints return JSON and use standard HTTP status codes.
+- The `version` field is used for optimistic locking. Deletion will fail with a 409 Conflict if the version does not match.
+- Blotters cannot be deleted if they are referenced by any orders.
+- Standard error responses (e.g., 404 Not Found, 400 Bad Request, 409 Conflict) are used as appropriate.
