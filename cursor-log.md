@@ -91,3 +91,11 @@ Actions:
 6. Used a service layer for maintainability and testability, following the status API as an example for consistency.
 7. Logged this prompt and these actions in cursor-log.md following the required format.
 
+
+Prompt: Please create unit tests for the code you created in the previous step. Please use the code you created in the previous unit tests as an example. Strive for consistency. Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+Actions:
+1. Created OrderTypeServiceTest in src/test/java/org/kasbench/globeco_order_service/service/ to test all service methods, using Mockito for repository mocking and JUnit 5 for assertions.
+2. Created OrderTypeControllerTest in src/test/java/org/kasbench/globeco_order_service/controller/ to test all controller endpoints using MockMvc, Mockito, and JUnit 5.
+3. Covered normal and edge cases for all CRUD operations.
+4. Logged this prompt and these actions in cursor-log.md following the required format.
+
