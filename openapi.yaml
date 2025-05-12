@@ -416,6 +416,42 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /actuator/health/liveness:
+    get:
+      summary: Liveness probe
+      description: Returns 200 if the application is alive. Used for Kubernetes livenessProbe.
+      tags: [Health]
+      responses:
+        '200':
+          description: Application is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /actuator/health/readiness:
+    get:
+      summary: Readiness probe
+      description: Returns 200 if the application is ready to serve traffic. Used for Kubernetes readinessProbe.
+      tags: [Health]
+      responses:
+        '200':
+          description: Application is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /actuator/health/startup:
+    get:
+      summary: Startup probe
+      description: Returns 200 if the application has started successfully. Used for Kubernetes startupProbe.
+      tags: [Health]
+      responses:
+        '200':
+          description: Application has started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
 components:
   schemas:
     StatusDTO:
@@ -609,6 +645,13 @@ components:
           type: integer
           example: 1
       required: [id, blotter, status, portfolioId, orderType, securityId, quantity, orderTimestamp, version]
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: UP
+      required: [status]
   responses:
     NotFound:
       description: Resource not found

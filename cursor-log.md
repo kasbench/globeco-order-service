@@ -168,3 +168,12 @@ Actions:
 3. Added comments for clarity and best practices.
 4. Logged this prompt and these actions at the end of cursor-log.md following the required format.
 
+
+Prompt: We will be deploying this service to Kubernetes. Please implement liveness, readiness, and startup health checks. Please update the README.md file and openapi.yaml spec with the health check APIs. Please be sure the URLs in the spec match the URLs in the API. Please add an entry with this prompt and your actions to the end of the cursor-log.md file following the instructions in the file.
+Actions:
+1. Verified that Spring Boot Actuator is included and provides health endpoints.
+2. Updated application.properties to expose health, info, and enable probe endpoints with details.
+3. Added a section to README.md documenting the liveness, readiness, and startup endpoints for Kubernetes.
+4. Updated openapi.yaml to document /actuator/health/liveness, /actuator/health/readiness, and /actuator/health/startup endpoints, with example responses.
+5. Logged this prompt and these actions at the end of cursor-log.md following the required format.
+

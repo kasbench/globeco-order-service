@@ -578,3 +578,23 @@ Response: HTTP 204 No Content
 - Orders cannot be deleted if they are referenced by other entities (e.g., foreign key constraints).
 - The `OrderWithDetailsDTO` response includes nested Blotter, Status, and OrderType details for convenience.
 - Standard error responses (e.g., 404 Not Found, 400 Bad Request, 409 Conflict) are used as appropriate.
+
+## Health Check Endpoints (Liveness, Readiness, Startup)
+
+This service exposes standard health check endpoints for Kubernetes probes using Spring Boot Actuator:
+
+| Probe Type | Endpoint URL                  | Description                       |
+|------------|-------------------------------|-----------------------------------|
+| Liveness   | `/actuator/health/liveness`   | Used for Kubernetes livenessProbe |
+| Readiness  | `/actuator/health/readiness`  | Used for Kubernetes readinessProbe|
+| Startup    | `/actuator/health/startup`    | Used for Kubernetes startupProbe  |
+
+All endpoints return JSON and HTTP 200 if healthy. Example response:
+```
+GET /actuator/health/liveness
+{
+  "status": "UP"
+}
+```
+
+These endpoints are enabled and exposed by default. You can use them directly in your Kubernetes deployment YAML for health checks.
