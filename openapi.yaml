@@ -110,6 +110,108 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /orderTypes:
+    get:
+      summary: List all order types
+      operationId: listOrderTypes
+      tags: [OrderType]
+      responses:
+        '200':
+          description: List of all order types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrderTypeDTO'
+    post:
+      summary: Create a new order type
+      operationId: createOrderType
+      tags: [OrderType]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderTypePostDTO'
+      responses:
+        '200':
+          description: The created order type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderTypeDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /orderType/{id}:
+    get:
+      summary: Get an order type by ID
+      operationId: getOrderTypeById
+      tags: [OrderType]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The order type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderTypeDTO'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update an existing order type
+      operationId: updateOrderType
+      tags: [OrderType]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderTypeDTO'
+      responses:
+        '200':
+          description: The updated order type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderTypeDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete an order type by ID
+      operationId: deleteOrderType
+      tags: [OrderType]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: version
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Order type deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 components:
   schemas:
     StatusDTO:
@@ -137,6 +239,35 @@ components:
         description:
           type: string
           example: New
+        version:
+          type: integer
+          example: 1
+      required: [abbreviation, description, version]
+    OrderTypeDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        abbreviation:
+          type: string
+          example: MKT
+        description:
+          type: string
+          example: Market
+        version:
+          type: integer
+          example: 1
+      required: [id, abbreviation, description, version]
+    OrderTypePostDTO:
+      type: object
+      properties:
+        abbreviation:
+          type: string
+          example: MKT
+        description:
+          type: string
+          example: Market
         version:
           type: integer
           example: 1
