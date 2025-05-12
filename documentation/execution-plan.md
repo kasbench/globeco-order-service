@@ -2,7 +2,7 @@
 
 Please perform each step when instructed.  Only perform one step at a time.
 
-1. Configure the project to connect to the PostgreSQL database on host `globeco-order-service-postgresql`  port 5432 and database `postgres`. Please add an entry with this prompt and your actions in the cursor-log.md  file following the instructions in the file.
+1. Configure the project to connect to the PostgreSQL database on host `globeco-order-service-postgresql`  port 5432 and database `postgres`.  The user is  "postgres".  No password is required. Please add an entry with this prompt and your actions in the cursor-log.md  file following the instructions in the file.
 2. Configure Flyway with the same configuration as in step 1.  Please add an entry with this prompt and your actions in the cursor-log.md  file following the instructions in the file.
 3. Create a Flyway migration to deploy the schema for this project.  The schema is in @order-service.sql.
 4. Create a Flyway migration for the blotter data in #### Initialization Data for `blotter`

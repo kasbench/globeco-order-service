@@ -6,8 +6,8 @@ Instructions:
 - Make sure there are two blank lines between each section.
 
 
-Prompt: This is a sample prompt
+Prompt: Configure the project to connect to the PostgreSQL database on host `globeco-order-service-postgresql`  port 5432 and database `postgres`.  The user is  "postgres".  No password is required. Please add an entry with this prompt and your actions in the cursor-log.md  file following the instructions in the file.
 Actions:
-1. This is the first action.
-2. This is the second action.
-3. This is the third action.
+1. Added PostgreSQL datasource configuration to src/main/resources/application.properties for host globeco-order-service-postgresql, port 5432, database postgres, user postgres, and no password.
+2. Logged this prompt and these actions in cursor-log.md following the required format.
+
