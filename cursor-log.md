@@ -152,3 +152,10 @@ Actions:
 3. Covered normal and edge cases for all CRUD operations.
 4. Logged this prompt and these actions in cursor-log.md following the required format.
 
+
+Prompt: Please add documentation for the order data model and API to readme.md. Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+Actions:
+1. Reviewed the requirements and the current README.md file.
+2. Added a section for the order data model and API, including data model, endpoints, request/response examples, and notes, following the format used for status, orderType, and blotter.
+3. Logged this prompt and these actions in cursor-log.md following the required format.
+

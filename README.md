@@ -382,3 +382,199 @@ Response: HTTP 204 No Content
 - The `version` field is used for optimistic locking. Deletion will fail with a 409 Conflict if the version does not match.
 - Blotters cannot be deleted if they are referenced by any orders.
 - Standard error responses (e.g., 404 Not Found, 400 Bad Request, 409 Conflict) are used as appropriate.
+
+---
+
+## Order Data Model and API Documentation
+
+### Introduction
+The **Order** resource in the GlobeCo Order Service represents a trading order, including all required fields and relationships to blotter, status, and order type. This API allows clients to list, create, update, and delete orders, with rich responses that include nested details for related entities.
+
+### Order Data Model
+| Field           | Type                | Nullable | Description                                         |
+|----------------|---------------------|----------|-----------------------------------------------------|
+| id             | Integer             | No       | Unique identifier for the order                     |
+| blotter        | BlotterDTO          | Yes      | The containing blotter (see BlotterDTO)             |
+| status         | StatusDTO           | No       | The order status (see StatusDTO)                    |
+| portfolioId    | String (24 char)    | No       | ID of the portfolio making the order                |
+| orderType      | OrderTypeDTO        | No       | The order type (see OrderTypeDTO)                   |
+| securityId     | String (24 char)    | No       | ID of the security being traded                     |
+| quantity       | Decimal(18,8)       | No       | Amount of security to trade                         |
+| limitPrice     | Decimal(18,8)       | Yes      | Price limit for the order (if applicable)           |
+| orderTimestamp | OffsetDateTime      | No       | When the order was placed                           |
+| version        | Integer             | No       | Optimistic locking version number                   |
+
+#### OrderDTO for POST/PUT
+| Field           | Type             | Nullable | Description                                         |
+|-----------------|------------------|----------|-----------------------------------------------------|
+| id              | Integer          | No (PUT) | Unique identifier for the order (PUT only)          |
+| blotterId       | Integer          | Yes      | Reference to the containing blotter                 |
+| statusId        | Integer          | No       | Reference to the order status                       |
+| portfolioId     | String (24 char) | No       | ID of the portfolio making the order                |
+| orderTypeId     | Integer          | No       | Reference to the order type                         |
+| securityId      | String (24 char) | No       | ID of the security being traded                     |
+| quantity        | Decimal(18,8)    | No       | Amount of security to trade                         |
+| limitPrice      | Decimal(18,8)    | Yes      | Price limit for the order (if applicable)           |
+| orderTimestamp  | OffsetDateTime   | No       | When the order was placed                           |
+| version         | Integer          | No       | Optimistic locking version number                   |
+
+### Order API Endpoints
+| Method | Path                                 | Request Body         | Response Body            | Description                                 |
+|--------|--------------------------------------|---------------------|--------------------------|---------------------------------------------|
+| GET    | /api/v1/orders                       |                     | [OrderWithDetailsDTO]    | List all orders (with details)              |
+| GET    | /api/v1/order/{id}                   |                     | OrderWithDetailsDTO      | Get an order by ID (with details)           |
+| POST   | /api/v1/orders                       | OrderDTO (POST)     | OrderWithDetailsDTO      | Create a new order                          |
+| PUT    | /api/v1/order/{id}                   | OrderDTO (PUT)      | OrderWithDetailsDTO      | Update an existing order                    |
+| DELETE | /api/v1/order/{id}?version={version} |                     |                          | Delete an order by ID                       |
+
+#### OrderWithDetailsDTO Example (GET)
+```
+{
+  "id": 42,
+  "blotter": {
+    "id": 1,
+    "name": "Equities",
+    "version": 1
+  },
+  "status": {
+    "id": 2,
+    "abbreviation": "NEW",
+    "description": "New Order",
+    "version": 1
+  },
+  "portfolioId": "5f47ac10b8e4e53b8cfa9b1a",
+  "orderType": {
+    "id": 3,
+    "abbreviation": "LMT",
+    "description": "Limit Order",
+    "version": 1
+  },
+  "securityId": "5f47ac10b8e4e53b8cfa9b1b",
+  "quantity": 100.00000000,
+  "limitPrice": 50.25000000,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 1
+}
+```
+
+#### OrderDTO Example (POST)
+```
+{
+  "blotterId": 1,
+  "statusId": 2,
+  "portfolioId": "5f47ac10b8e4e53b8cfa9b1a",
+  "orderTypeId": 3,
+  "securityId": "5f47ac10b8e4e53b8cfa9b1b",
+  "quantity": 100.00000000,
+  "limitPrice": 50.25000000,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 1
+}
+```
+
+#### Example: Get All Orders
+Request:
+```
+GET /api/v1/orders
+```
+Response:
+```
+[
+  {
+    "id": 42,
+    "blotter": { "id": 1, "name": "Equities", "version": 1 },
+    "status": { "id": 2, "abbreviation": "NEW", "description": "New Order", "version": 1 },
+    "portfolioId": "5f47ac10b8e4e53b8cfa9b1a",
+    "orderType": { "id": 3, "abbreviation": "LMT", "description": "Limit Order", "version": 1 },
+    "securityId": "5f47ac10b8e4e53b8cfa9b1b",
+    "quantity": 100.00000000,
+    "limitPrice": 50.25000000,
+    "orderTimestamp": "2024-06-01T12:00:00Z",
+    "version": 1
+  },
+  ...
+]
+```
+
+#### Example: Create Order
+Request:
+```
+POST /api/v1/orders
+Content-Type: application/json
+
+{
+  "blotterId": 1,
+  "statusId": 2,
+  "portfolioId": "5f47ac10b8e4e53b8cfa9b1a",
+  "orderTypeId": 3,
+  "securityId": "5f47ac10b8e4e53b8cfa9b1b",
+  "quantity": 100.00000000,
+  "limitPrice": 50.25000000,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 1
+}
+```
+Response:
+```
+{
+  "id": 42,
+  "blotter": { "id": 1, "name": "Equities", "version": 1 },
+  "status": { "id": 2, "abbreviation": "NEW", "description": "New Order", "version": 1 },
+  "portfolioId": "5f47ac10b8e4e53b8cfa9b1a",
+  "orderType": { "id": 3, "abbreviation": "LMT", "description": "Limit Order", "version": 1 },
+  "securityId": "5f47ac10b8e4e53b8cfa9b1b",
+  "quantity": 100.00000000,
+  "limitPrice": 50.25000000,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 1
+}
+```
+
+#### Example: Update Order
+Request:
+```
+PUT /api/v1/order/42
+Content-Type: application/json
+
+{
+  "id": 42,
+  "blotterId": 1,
+  "statusId": 2,
+  "portfolioId": "5f47ac10b8e4e53b8cfa9b1a",
+  "orderTypeId": 3,
+  "securityId": "5f47ac10b8e4e53b8cfa9b1b",
+  "quantity": 100.00000000,
+  "limitPrice": 50.25000000,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 2
+}
+```
+Response:
+```
+{
+  "id": 42,
+  "blotter": { "id": 1, "name": "Equities", "version": 1 },
+  "status": { "id": 2, "abbreviation": "NEW", "description": "New Order", "version": 1 },
+  "portfolioId": "5f47ac10b8e4e53b8cfa9b1a",
+  "orderType": { "id": 3, "abbreviation": "LMT", "description": "Limit Order", "version": 1 },
+  "securityId": "5f47ac10b8e4e53b8cfa9b1b",
+  "quantity": 100.00000000,
+  "limitPrice": 50.25000000,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 2
+}
+```
+
+#### Example: Delete Order
+Request:
+```
+DELETE /api/v1/order/42?version=2
+```
+Response: HTTP 204 No Content
+
+### Notes
+- All endpoints return JSON and use standard HTTP status codes.
+- The `version` field is used for optimistic locking. Deletion will fail with a 409 Conflict if the version does not match.
+- Orders cannot be deleted if they are referenced by other entities (e.g., foreign key constraints).
+- The `OrderWithDetailsDTO` response includes nested Blotter, Status, and OrderType details for convenience.
+- Standard error responses (e.g., 404 Not Found, 400 Bad Request, 409 Conflict) are used as appropriate.
