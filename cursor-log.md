@@ -40,3 +40,10 @@ Actions:
 2. Created the Flyway migration file src/main/resources/db/migration/V3__order_type_init_data.sql to insert the required rows: BUY/Buy, SELL/Sell, SHORT/Sell to Open, COVER/Buy to Close, EXRC/Exercise (all with version 1).
 3. Logged this prompt and these actions in cursor-log.md following the required format.
 
+
+Prompt: Create a Flyway migration for the blotter data in #### Initialization Data for `status`
+Actions:
+1. Reviewed the requirements for the initialization data for the status table.
+2. Created the Flyway migration file src/main/resources/db/migration/V4__status_init_data.sql to insert the required rows: NEW/New, SENT/Sent, WORK/In progress, FULL/Filled, PART/Partial fill, HOLD/Hold, CNCL/Cancel, CNCLD/Cancelled, CPART/Cancelled with partial fill, DEL/Delete (all with version 1).
+3. Logged this prompt and these actions in cursor-log.md following the required format.
+
