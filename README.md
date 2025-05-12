@@ -598,3 +598,30 @@ GET /actuator/health/liveness
 ```
 
 These endpoints are enabled and exposed by default. You can use them directly in your Kubernetes deployment YAML for health checks.
+
+## OpenAPI Schema Endpoint
+
+The OpenAPI 3.0 schema for this service is available at:
+
+    /openapi.yaml
+
+Example: http://localhost:8080/openapi.yaml
+
+This file is served as a static resource and can be used for integration with tools such as Swagger UI, Redoc, or for client code generation.
+
+## Springdoc OpenAPI & Swagger UI Endpoints
+
+With Springdoc OpenAPI, the following endpoints are automatically available:
+
+| Endpoint              | Description                        |
+|----------------------|------------------------------------|
+| /v3/api-docs         | OpenAPI 3.0 schema (JSON)          |
+| /v3/api-docs.yaml    | OpenAPI 3.0 schema (YAML)          |
+| /swagger-ui.html     | Interactive Swagger UI documentation|
+
+Example URLs:
+- http://localhost:8080/v3/api-docs
+- http://localhost:8080/v3/api-docs.yaml
+- http://localhost:8080/swagger-ui.html
+
+These endpoints are generated from your controllers and models. You can use them for API exploration, client code generation, and integration with other tools.

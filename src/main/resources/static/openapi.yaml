@@ -1,0 +1,685 @@
+openapi: 3.0.3
+info:
+  title: GlobeCo Order Service - Status API
+  version: 1.0.0
+  description: |
+    OpenAPI specification for the Status API in the GlobeCo Order Service.
+    Provides endpoints to manage order status values.
+servers:
+  - url: /api/v1
+paths:
+  /statuses:
+    get:
+      summary: List all statuses
+      operationId: listStatuses
+      tags: [Status]
+      responses:
+        '200':
+          description: List of all statuses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatusDTO'
+    post:
+      summary: Create a new status
+      operationId: createStatus
+      tags: [Status]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusPostDTO'
+      responses:
+        '200':
+          description: The created status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /status/{id}:
+    get:
+      summary: Get a status by ID
+      operationId: getStatusById
+      tags: [Status]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusDTO'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update an existing status
+      operationId: updateStatus
+      tags: [Status]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusDTO'
+      responses:
+        '200':
+          description: The updated status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete a status by ID
+      operationId: deleteStatus
+      tags: [Status]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: version
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Status deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /orderTypes:
+    get:
+      summary: List all order types
+      operationId: listOrderTypes
+      tags: [OrderType]
+      responses:
+        '200':
+          description: List of all order types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrderTypeDTO'
+    post:
+      summary: Create a new order type
+      operationId: createOrderType
+      tags: [OrderType]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderTypePostDTO'
+      responses:
+        '200':
+          description: The created order type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderTypeDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /orderType/{id}:
+    get:
+      summary: Get an order type by ID
+      operationId: getOrderTypeById
+      tags: [OrderType]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The order type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderTypeDTO'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update an existing order type
+      operationId: updateOrderType
+      tags: [OrderType]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderTypeDTO'
+      responses:
+        '200':
+          description: The updated order type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderTypeDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete an order type by ID
+      operationId: deleteOrderType
+      tags: [OrderType]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: version
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Order type deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /blotters:
+    get:
+      summary: List all blotters
+      operationId: listBlotters
+      tags: [Blotter]
+      responses:
+        '200':
+          description: List of all blotters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BlotterDTO'
+    post:
+      summary: Create a new blotter
+      operationId: createBlotter
+      tags: [Blotter]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlotterPostDTO'
+      responses:
+        '200':
+          description: The created blotter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlotterDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /blotter/{id}:
+    get:
+      summary: Get a blotter by ID
+      operationId: getBlotterById
+      tags: [Blotter]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The blotter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlotterDTO'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update an existing blotter
+      operationId: updateBlotter
+      tags: [Blotter]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlotterDTO'
+      responses:
+        '200':
+          description: The updated blotter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlotterDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete a blotter by ID
+      operationId: deleteBlotter
+      tags: [Blotter]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: version
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Blotter deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /orders:
+    get:
+      summary: List all orders
+      operationId: listOrders
+      tags: [Order]
+      responses:
+        '200':
+          description: List of all orders (with details)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrderWithDetailsDTO'
+    post:
+      summary: Create a new order
+      operationId: createOrder
+      tags: [Order]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderPostDTO'
+      responses:
+        '200':
+          description: The created order (with details)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderWithDetailsDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /order/{id}:
+    get:
+      summary: Get an order by ID
+      operationId: getOrderById
+      tags: [Order]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The order (with details)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderWithDetailsDTO'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update an existing order
+      operationId: updateOrder
+      tags: [Order]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderDTO'
+      responses:
+        '200':
+          description: The updated order (with details)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderWithDetailsDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete an order by ID
+      operationId: deleteOrder
+      tags: [Order]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: version
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Order deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /actuator/health/liveness:
+    get:
+      summary: Liveness probe
+      description: Returns 200 if the application is alive. Used for Kubernetes livenessProbe.
+      tags: [Health]
+      responses:
+        '200':
+          description: Application is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /actuator/health/readiness:
+    get:
+      summary: Readiness probe
+      description: Returns 200 if the application is ready to serve traffic. Used for Kubernetes readinessProbe.
+      tags: [Health]
+      responses:
+        '200':
+          description: Application is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /actuator/health/startup:
+    get:
+      summary: Startup probe
+      description: Returns 200 if the application has started successfully. Used for Kubernetes startupProbe.
+      tags: [Health]
+      responses:
+        '200':
+          description: Application has started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+components:
+  schemas:
+    StatusDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        abbreviation:
+          type: string
+          example: NEW
+        description:
+          type: string
+          example: New
+        version:
+          type: integer
+          example: 1
+      required: [id, abbreviation, description, version]
+    StatusPostDTO:
+      type: object
+      properties:
+        abbreviation:
+          type: string
+          example: NEW
+        description:
+          type: string
+          example: New
+        version:
+          type: integer
+          example: 1
+      required: [abbreviation, description, version]
+    OrderTypeDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        abbreviation:
+          type: string
+          example: MKT
+        description:
+          type: string
+          example: Market
+        version:
+          type: integer
+          example: 1
+      required: [id, abbreviation, description, version]
+    OrderTypePostDTO:
+      type: object
+      properties:
+        abbreviation:
+          type: string
+          example: MKT
+        description:
+          type: string
+          example: Market
+        version:
+          type: integer
+          example: 1
+      required: [abbreviation, description, version]
+    BlotterDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Default
+        version:
+          type: integer
+          example: 1
+      required: [id, name, version]
+    BlotterPostDTO:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Default
+        version:
+          type: integer
+          example: 1
+      required: [name, version]
+    OrderDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        blotterId:
+          type: integer
+          nullable: true
+          example: 1
+        statusId:
+          type: integer
+          example: 2
+        portfolioId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1a
+        orderTypeId:
+          type: integer
+          example: 3
+        securityId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1b
+        quantity:
+          type: number
+          format: double
+          example: 100.00000000
+        limitPrice:
+          type: number
+          format: double
+          nullable: true
+          example: 50.25000000
+        orderTimestamp:
+          type: string
+          format: date-time
+          example: 2024-06-01T12:00:00Z
+        version:
+          type: integer
+          example: 1
+      required: [id, blotterId, statusId, portfolioId, orderTypeId, securityId, quantity, orderTimestamp, version]
+    OrderPostDTO:
+      type: object
+      properties:
+        blotterId:
+          type: integer
+          nullable: true
+          example: 1
+        statusId:
+          type: integer
+          example: 2
+        portfolioId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1a
+        orderTypeId:
+          type: integer
+          example: 3
+        securityId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1b
+        quantity:
+          type: number
+          format: double
+          example: 100.00000000
+        limitPrice:
+          type: number
+          format: double
+          nullable: true
+          example: 50.25000000
+        orderTimestamp:
+          type: string
+          format: date-time
+          example: 2024-06-01T12:00:00Z
+        version:
+          type: integer
+          example: 1
+      required: [blotterId, statusId, portfolioId, orderTypeId, securityId, quantity, orderTimestamp, version]
+    OrderWithDetailsDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        blotter:
+          $ref: '#/components/schemas/BlotterDTO'
+        status:
+          $ref: '#/components/schemas/StatusDTO'
+        portfolioId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1a
+        orderType:
+          $ref: '#/components/schemas/OrderTypeDTO'
+        securityId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1b
+        quantity:
+          type: number
+          format: double
+          example: 100.00000000
+        limitPrice:
+          type: number
+          format: double
+          nullable: true
+          example: 50.25000000
+        orderTimestamp:
+          type: string
+          format: date-time
+          example: 2024-06-01T12:00:00Z
+        version:
+          type: integer
+          example: 1
+      required: [id, blotter, status, portfolioId, orderType, securityId, quantity, orderTimestamp, version]
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: UP
+      required: [status]
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Not found
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Bad request
+    Conflict:
+      description: Conflict (e.g., version mismatch)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Version mismatch or resource in use 

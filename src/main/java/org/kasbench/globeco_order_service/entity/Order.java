@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "order")
+@Table(name = "\"order\"")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

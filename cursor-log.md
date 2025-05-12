@@ -185,3 +185,17 @@ Actions:
 3. Ensured all probe URLs and resource settings match the requirements.
 4. Logged this prompt and these actions at the end of cursor-log.md following the required format.
 
+
+Prompt: Please expose the OpenAPI schema as an endpoint on this service. Please add an entry with this prompt and your actions to the end of the cursor-log.md file following the instructions in the file.
+Actions:
+1. Copied openapi.yaml to src/main/resources/static so it is served as a static file by Spring Boot at /openapi.yaml.
+2. Updated README.md to document the /openapi.yaml endpoint, including example usage and rationale for integration with Swagger UI, Redoc, or client code generation.
+3. Logged this prompt and these actions at the end of cursor-log.md following the required format.
+
+
+Prompt: Please expose the OpenAPI schema using Springdoc OpenAPI. Please add an entry with this prompt and your actions to the end of the cursor-log.md file following the instructions in the file.
+Actions:
+1. Added the Springdoc OpenAPI dependency (springdoc-openapi-starter-webmvc-ui:2.5.0) to build.gradle.
+2. Documented the new endpoints (/v3/api-docs, /v3/api-docs.yaml, /swagger-ui.html) in README.md, including example URLs and usage notes.
+3. Logged this prompt and these actions at the end of cursor-log.md following the required format.
+
