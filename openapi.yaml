@@ -314,6 +314,108 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /orders:
+    get:
+      summary: List all orders
+      operationId: listOrders
+      tags: [Order]
+      responses:
+        '200':
+          description: List of all orders (with details)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrderWithDetailsDTO'
+    post:
+      summary: Create a new order
+      operationId: createOrder
+      tags: [Order]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderPostDTO'
+      responses:
+        '200':
+          description: The created order (with details)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderWithDetailsDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /order/{id}:
+    get:
+      summary: Get an order by ID
+      operationId: getOrderById
+      tags: [Order]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The order (with details)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderWithDetailsDTO'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update an existing order
+      operationId: updateOrder
+      tags: [Order]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderDTO'
+      responses:
+        '200':
+          description: The updated order (with details)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderWithDetailsDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete an order by ID
+      operationId: deleteOrder
+      tags: [Order]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: version
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Order deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 components:
   schemas:
     StatusDTO:
@@ -397,6 +499,116 @@ components:
           type: integer
           example: 1
       required: [name, version]
+    OrderDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        blotterId:
+          type: integer
+          nullable: true
+          example: 1
+        statusId:
+          type: integer
+          example: 2
+        portfolioId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1a
+        orderTypeId:
+          type: integer
+          example: 3
+        securityId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1b
+        quantity:
+          type: number
+          format: double
+          example: 100.00000000
+        limitPrice:
+          type: number
+          format: double
+          nullable: true
+          example: 50.25000000
+        orderTimestamp:
+          type: string
+          format: date-time
+          example: 2024-06-01T12:00:00Z
+        version:
+          type: integer
+          example: 1
+      required: [id, blotterId, statusId, portfolioId, orderTypeId, securityId, quantity, orderTimestamp, version]
+    OrderPostDTO:
+      type: object
+      properties:
+        blotterId:
+          type: integer
+          nullable: true
+          example: 1
+        statusId:
+          type: integer
+          example: 2
+        portfolioId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1a
+        orderTypeId:
+          type: integer
+          example: 3
+        securityId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1b
+        quantity:
+          type: number
+          format: double
+          example: 100.00000000
+        limitPrice:
+          type: number
+          format: double
+          nullable: true
+          example: 50.25000000
+        orderTimestamp:
+          type: string
+          format: date-time
+          example: 2024-06-01T12:00:00Z
+        version:
+          type: integer
+          example: 1
+      required: [blotterId, statusId, portfolioId, orderTypeId, securityId, quantity, orderTimestamp, version]
+    OrderWithDetailsDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        blotter:
+          $ref: '#/components/schemas/BlotterDTO'
+        status:
+          $ref: '#/components/schemas/StatusDTO'
+        portfolioId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1a
+        orderType:
+          $ref: '#/components/schemas/OrderTypeDTO'
+        securityId:
+          type: string
+          example: 5f47ac10b8e4e53b8cfa9b1b
+        quantity:
+          type: number
+          format: double
+          example: 100.00000000
+        limitPrice:
+          type: number
+          format: double
+          nullable: true
+          example: 50.25000000
+        orderTimestamp:
+          type: string
+          format: date-time
+          example: 2024-06-01T12:00:00Z
+        version:
+          type: integer
+          example: 1
+      required: [id, blotter, status, portfolioId, orderType, securityId, quantity, orderTimestamp, version]
   responses:
     NotFound:
       description: Resource not found
