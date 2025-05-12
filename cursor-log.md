@@ -177,3 +177,11 @@ Actions:
 4. Updated openapi.yaml to document /actuator/health/liveness, /actuator/health/readiness, and /actuator/health/startup endpoints, with example responses.
 5. Logged this prompt and these actions at the end of cursor-log.md following the required format.
 
+
+Prompt: Please create all the files necessary to deploy to this application as a service to Kubernetes. Please include the liveness, readiness, and startup probes you just created. The deployment should start with one instance of the service and should scale up to a maximum of 100 instances. It should have up 100 millicores and 200 MiB of memory. The liveness probe should have a timeout (`timeoutSeconds`) of 240 seconds. The name of the service is `globeco-order-service` in the `globeco` namespace. You do not need to create the namespace. Please add an entry with this prompt and your actions to the end of the cursor-log.md file following the instructions in the file.
+Actions:
+1. Created k8s/deployment.yaml with liveness, readiness, and startup probes, resource limits, and scaling configuration as specified.
+2. Created k8s/service.yaml for a ClusterIP service in the globeco namespace, exposing port 80 to targetPort 8080.
+3. Ensured all probe URLs and resource settings match the requirements.
+4. Logged this prompt and these actions at the end of cursor-log.md following the required format.
+
