@@ -33,3 +33,10 @@ Actions:
 2. Created the Flyway migration file src/main/resources/db/migration/V2__blotter_init_data.sql to insert the required rows: Default, Equity, Fixed Income, Hold, Crypto (all with version 1).
 3. Logged this prompt and these actions in cursor-log.md following the required format.
 
+
+Prompt: Create a Flyway migration for the blotter data in #### Initialization Data for `order_type`
+Actions:
+1. Reviewed the requirements for the initialization data for the order_type table.
+2. Created the Flyway migration file src/main/resources/db/migration/V3__order_type_init_data.sql to insert the required rows: BUY/Buy, SELL/Sell, SHORT/Sell to Open, COVER/Buy to Close, EXRC/Exercise (all with version 1).
+3. Logged this prompt and these actions in cursor-log.md following the required format.
+
