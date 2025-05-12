@@ -107,21 +107,25 @@ public class OrderControllerTest {
     @Test
     void testCreateOrder() throws Exception {
         Mockito.when(orderService.create(any(OrderPostDTO.class))).thenReturn(orderWithDetailsDTO);
-        mockMvc.perform(post("/api/v1/orders")
+        String response = mockMvc.perform(post("/api/v1/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(orderPostDTO)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath(".id").value(10));
+                .andReturn().getResponse().getContentAsString();
+        OrderWithDetailsDTO result = objectMapper.readValue(response, OrderWithDetailsDTO.class);
+        org.junit.jupiter.api.Assertions.assertEquals(10, result.getId());
     }
 
     @Test
     void testUpdateOrder_found() throws Exception {
         Mockito.when(orderService.update(eq(10), any(OrderDTO.class))).thenReturn(Optional.of(orderWithDetailsDTO));
-        mockMvc.perform(put("/api/v1/order/10")
+        String response = mockMvc.perform(put("/api/v1/order/10")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(orderDTO)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath(".id").value(10));
+                .andReturn().getResponse().getContentAsString();
+        OrderWithDetailsDTO result = objectMapper.readValue(response, OrderWithDetailsDTO.class);
+        org.junit.jupiter.api.Assertions.assertEquals(10, result.getId());
     }
 
     @Test
