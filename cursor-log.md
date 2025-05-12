@@ -106,3 +106,22 @@ Actions:
 2. Added a section for the orderType data model and API, including data model, endpoints, request/response examples, and notes, following the format used for status.
 3. Logged this prompt and these actions in cursor-log.md following the required format.
 
+
+Prompt: Please implement the APIs for blotter using the requirements provided in @requirements.md. Use the code for status as an example. Strive for consistency. Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+Actions:
+1. Created the Blotter JPA entity in src/main/java/org/kasbench/globeco_order_service/entity/Blotter.java.
+2. Created BlotterDTO and BlotterPostDTO in src/main/java/org/kasbench/globeco_order_service/dto/ for GET/PUT and POST requests.
+3. Created BlotterRepository in src/main/java/org/kasbench/globeco_order_service/repository/ for CRUD operations.
+4. Implemented BlotterService in src/main/java/org/kasbench/globeco_order_service/service/ with business logic and mapping between entity and DTOs.
+5. Implemented BlotterController in src/main/java/org/kasbench/globeco_order_service/controller/ with endpoints for GET, POST, PUT, DELETE as specified.
+6. Used a service layer for maintainability and testability, following the status API as an example for consistency.
+7. Logged this prompt and these actions in cursor-log.md following the required format.
+
+
+Prompt: Please create unit tests for the code you created in the previous step. Please use the code you created in the previous unit tests as an example. Strive for consistency. Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+Actions:
+1. Created BlotterServiceTest in src/test/java/org/kasbench/globeco_order_service/service/ to test all service methods, using Mockito for repository mocking and JUnit 5 for assertions.
+2. Created BlotterControllerTest in src/test/java/org/kasbench/globeco_order_service/controller/ to test all controller endpoints using MockMvc, Mockito, and JUnit 5.
+3. Covered normal and edge cases for all CRUD operations.
+4. Logged this prompt and these actions in cursor-log.md following the required format.
+
