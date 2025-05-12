@@ -79,6 +79,19 @@ A blotter is a record of financial transactions, typically used to organize and 
 | name    | varchar(60) | NOT NULL       | Name of the blotter               |
 | version | integer     | NOT NULL, DEF 1 | Optimistic locking version number |
 
+#### Initialization Data for `blotter`
+
+| name | version |
+| --- | --- |
+| Default | 1 |
+| Equity | 1 |
+| Fixed Income | 1 |
+| Hold | 1 |
+| Crypto | 1 |
+---
+
+
+
 ### order
 
 The main entity representing a trading order in the system.
@@ -107,6 +120,18 @@ Defines the various types of orders available in the system.
 | description | varchar(60) | NOT NULL       | Detailed description of order type |
 | version     | integer     | NOT NULL, DEF 1 | Optimistic locking version number |
 
+#### Initialization data for `order_type`
+
+| abbreviation | description | version |
+| --- | --- | --- |
+| BUY | Buy | 1 |
+| SELL | Sell | 1 |
+| SHORT | Sell to Open | 1 |
+| COVER | Buy to Close | 1 |
+| EXRC | Exercise | 1 |
+---
+
+
 ### status
 
 Defines the possible statuses an order can have.
@@ -117,6 +142,22 @@ Defines the possible statuses an order can have.
 | abbreviation | varchar(20) | NOT NULL       | Short code for the status         |
 | description | varchar(60) | NOT NULL       | Detailed description of status    |
 | version     | integer     | NOT NULL, DEF 1 | Optimistic locking version number |
+
+#### Initialization Data for `status`
+
+| abbreviation | description | version |
+| --- | --- | --- |
+| NEW | New | 1 |
+| SENT | Sent | 1 |
+| WORK | In progress | 1 |
+| FULL | Filled | 1 |
+| PART | Partial fill | 1 |
+| HOLD | Hold | 1 |
+| CNCL | Cancel | 1 |
+| CNCLD | Cancelled | 1 |
+| CPART | Cancelled with partial fill | 1 |
+| DEL | Delete | 1 |
+---
 
 ## Relationships
 
