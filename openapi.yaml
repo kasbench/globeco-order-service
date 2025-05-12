@@ -212,6 +212,108 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /blotters:
+    get:
+      summary: List all blotters
+      operationId: listBlotters
+      tags: [Blotter]
+      responses:
+        '200':
+          description: List of all blotters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BlotterDTO'
+    post:
+      summary: Create a new blotter
+      operationId: createBlotter
+      tags: [Blotter]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlotterPostDTO'
+      responses:
+        '200':
+          description: The created blotter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlotterDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /blotter/{id}:
+    get:
+      summary: Get a blotter by ID
+      operationId: getBlotterById
+      tags: [Blotter]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The blotter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlotterDTO'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update an existing blotter
+      operationId: updateBlotter
+      tags: [Blotter]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlotterDTO'
+      responses:
+        '200':
+          description: The updated blotter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlotterDTO'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete a blotter by ID
+      operationId: deleteBlotter
+      tags: [Blotter]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: version
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Blotter deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 components:
   schemas:
     StatusDTO:
@@ -272,6 +374,29 @@ components:
           type: integer
           example: 1
       required: [abbreviation, description, version]
+    BlotterDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Default
+        version:
+          type: integer
+          example: 1
+      required: [id, name, version]
+    BlotterPostDTO:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Default
+        version:
+          type: integer
+          example: 1
+      required: [name, version]
   responses:
     NotFound:
       description: Resource not found

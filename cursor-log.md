@@ -81,6 +81,14 @@ Actions:
 3. Logged this prompt and these actions in cursor-log.md following the required format.
 
 
+Prompt: Please update the openapi schema `openapi.yaml` with the spec for blotter. Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
+Actions:
+1. Reviewed the existing openapi.yaml file and the README documentation for the blotter API.
+2. Added the full OpenAPI 3.0 specification for the blotter API, including endpoints for GET, POST, PUT, DELETE, and schemas for BlotterDTO and BlotterPostDTO, following the format used for status and orderType.
+3. Used the same error response structure and conventions as the other APIs for consistency.
+4. Logged this prompt and these actions in cursor-log.md following the required format.
+
+
 Prompt: Please implement the APIs for orderType using the requirements provided in @requirements.md. Use the code for status as an example. Strive for consistency. Please add an entry with this prompt and your actions in the cursor-log.md file following the instructions in the file.
 Actions:
 1. Created the OrderType JPA entity in src/main/java/org/kasbench/globeco_order_service/entity/OrderType.java.
