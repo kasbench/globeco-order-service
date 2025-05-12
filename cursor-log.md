@@ -2,8 +2,9 @@ Instructions:
 - Log every request that you receive.
 - Log every action that you take in an enumerated list.
 - Follow the format provided below.  
-- Add each new entry at the end.
+- Add each new entry at the end.  NEVER delete or replace an entry.  Only add entries at the end.
 - Make sure there are two blank lines between each section.
+- Please remember these instructions.
 
 
 Prompt: Configure the project to connect to the PostgreSQL database on host `globeco-order-service-postgresql`  port 5432 and database `postgres`.  The user is  "postgres".  No password is required. Please add an entry with this prompt and your actions in the cursor-log.md  file following the instructions in the file.
@@ -158,4 +159,12 @@ Actions:
 1. Reviewed the requirements and the current README.md file.
 2. Added a section for the order data model and API, including data model, endpoints, request/response examples, and notes, following the format used for status, orderType, and blotter.
 3. Logged this prompt and these actions in cursor-log.md following the required format.
+
+
+Prompt: Please create a Dockerfile for this application. Please add an entry with this prompt and your actions to the end of the cursor-log.md file following the instructions in the file.
+Actions:
+1. Checked for an existing Dockerfile and confirmed none was present.
+2. Created a Dockerfile for the Spring Boot application using Java 21, based on eclipse-temurin:21-jre-alpine, copying the built jar from build/libs, exposing port 8080, and setting the entrypoint to run the jar.
+3. Added comments for clarity and best practices.
+4. Logged this prompt and these actions at the end of cursor-log.md following the required format.
 
