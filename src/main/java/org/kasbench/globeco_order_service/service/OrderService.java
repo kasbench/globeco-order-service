@@ -6,6 +6,10 @@ import org.kasbench.globeco_order_service.entity.*;
 import org.kasbench.globeco_order_service.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpStatus;
 
 import java.util.List;
 import java.util.Optional;
@@ -18,6 +22,7 @@ public class OrderService {
     private final BlotterRepository blotterRepository;
     private final StatusRepository statusRepository;
     private final OrderTypeRepository orderTypeRepository;
+    private final RestTemplate restTemplate;
 
     public List<OrderWithDetailsDTO> getAll() {
         return orderRepository.findAll().stream()
@@ -75,6 +80,37 @@ public class OrderService {
             orderRepository.deleteById(id);
             return true;
         }).orElse(false);
+    }
+
+    @Transactional
+    public boolean submitOrder(Integer id) {
+        Order order = orderRepository.findById(id).orElseThrow();
+        if (!order.getStatus().getAbbreviation().equals("NEW")) {
+            return false;
+        }
+        TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
+                .orderId(order.getId())
+                .portfolioId(order.getPortfolioId())
+                .orderType(order.getOrderType().getAbbreviation())
+                .securityId(order.getSecurityId())
+                .quantity(order.getQuantity())
+                .limitPrice(order.getLimitPrice())
+                .tradeTimestamp(order.getOrderTimestamp())
+                .blotterId(order.getBlotter() != null ? order.getBlotter().getId() : null)
+                .build();
+        String url = "http://localhost:8082/api/v1/tradeOrders";
+        HttpEntity<TradeOrderPostDTO> request = new HttpEntity<>(tradeOrder);
+        ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+        if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
+            // Update status to SENT
+            Status sentStatus = statusRepository.findAll().stream()
+                .filter(s -> s.getAbbreviation().equals("SENT"))
+                .findFirst().orElseThrow();
+            order.setStatus(sentStatus);
+            orderRepository.save(order);
+            return true;
+        }
+        return false;
     }
 
     private OrderWithDetailsDTO toWithDetailsDTO(Order order) {

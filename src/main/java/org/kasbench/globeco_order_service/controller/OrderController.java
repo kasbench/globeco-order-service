@@ -50,4 +50,14 @@ public class OrderController {
             return ResponseEntity.status(409).build(); // Conflict if version mismatch
         }
     }
+
+    @PostMapping("/orders/{id}/submit")
+    public ResponseEntity<?> submitOrder(@PathVariable Integer id) {
+        boolean submitted = orderService.submitOrder(id);
+        if (submitted) {
+            return ResponseEntity.ok().body(java.util.Collections.singletonMap("status", "submitted"));
+        } else {
+            return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("status", "not submitted"));
+        }
+    }
 } 
