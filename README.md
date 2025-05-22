@@ -648,3 +648,35 @@ This project uses GitHub Actions to build and push multi-architecture (AMD64 and
 - `DOCKERHUB_REPO`: The DockerHub repository name (e.g., `globeco-order-service`)
 
 This ensures that every commit to main is built and published as a multi-architecture image, ready for deployment on any platform.
+
+### Submit Order Endpoint
+
+#### POST /api/v1/orders/{id}/submit
+
+Submits an order to the GlobeCo Trade Service. This endpoint calls the trade service's POST /api/v1/tradeOrders API, mapping the order fields as required. If the submission is successful, the order status is updated from "NEW" to "SENT".
+
+- **Request:** No body required. The order must be in status "NEW".
+- **Response:**
+  - 200 OK: `{ "status": "submitted" }` (if successful)
+  - 400 Bad Request: `{ "status": "not submitted" }` (if not in NEW status or trade service call fails)
+
+**Example:**
+```
+POST /api/v1/orders/42/submit
+
+Response (success):
+{
+  "status": "submitted"
+}
+
+Response (failure):
+{
+  "status": "not submitted"
+}
+```
+
+**Notes:**
+- This endpoint is used to submit an order for execution.
+- The order is sent to the trade service at http://localhost:8082/api/v1/tradeOrders.
+- Only orders with status "NEW" can be submitted.
+- On success, the order status is updated to "SENT" in the order service.
