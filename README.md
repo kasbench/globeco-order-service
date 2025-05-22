@@ -625,3 +625,7 @@ Example URLs:
 - http://localhost:8080/swagger-ui.html
 
 These endpoints are generated from your controllers and models. You can use them for API exploration, client code generation, and integration with other tools.
+
+## CORS Policy
+
+All API endpoints in the GlobeCo Order Service allow requests from any origin (CORS is enabled globally for all origins, methods, and headers). This is configured to facilitate integration with any client or service, as required by the supplemental requirements.

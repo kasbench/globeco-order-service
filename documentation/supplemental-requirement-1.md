@@ -25,3 +25,9 @@ Map {id} to tradeOrder.orderId.  All other fields map by name.
 If successful, change the order status from "NEW" to "SENT"
 
 Return 200 and status of "submitted" if successful.
+
+Please also generate tests for this new API.
+
+## Update documentation
+
+* Update README.md and openapi.yaml to reflect these changes
