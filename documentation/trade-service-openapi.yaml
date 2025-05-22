@@ -1,0 +1,937 @@
+openapi: 3.0.3
+info:
+  title: GlobeCo Trade Service - Blotter API
+  version: 1.0.0
+  description: API for managing blotters in the GlobeCo Trade Service.
+servers:
+  - url: http://localhost:8082/api/v1
+paths:
+  /blotters:
+    get:
+      summary: Get all blotters
+      operationId: getAllBlotters
+      tags: [Blotter]
+      responses:
+        '200':
+          description: List of blotters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BlotterResponseDTO'
+    post:
+      summary: Create a new blotter
+      operationId: createBlotter
+      tags: [Blotter]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlotterPostDTO'
+      responses:
+        '201':
+          description: Blotter created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlotterResponseDTO'
+  /blotters/{id}:
+    get:
+      summary: Get a blotter by ID
+      operationId: getBlotterById
+      tags: [Blotter]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Blotter found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlotterResponseDTO'
+        '404':
+          description: Blotter not found
+    put:
+      summary: Update a blotter by ID
+      operationId: updateBlotter
+      tags: [Blotter]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlotterPutDTO'
+      responses:
+        '200':
+          description: Blotter updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlotterResponseDTO'
+        '404':
+          description: Blotter not found
+    delete:
+      summary: Delete a blotter by ID and version
+      operationId: deleteBlotter
+      tags: [Blotter]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Blotter deleted
+        '404':
+          description: Blotter not found
+  /tradeOrders:
+    get:
+      summary: Get all trade orders
+      operationId: getAllTradeOrders
+      tags: [TradeOrder]
+      responses:
+        '200':
+          description: List of trade orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TradeOrderResponseDTO'
+    post:
+      summary: Create a new trade order
+      operationId: createTradeOrder
+      tags: [TradeOrder]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TradeOrderPostDTO'
+      responses:
+        '201':
+          description: Trade order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeOrderResponseDTO'
+  /tradeOrders/{id}:
+    get:
+      summary: Get a trade order by ID
+      operationId: getTradeOrderById
+      tags: [TradeOrder]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Trade order found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeOrderResponseDTO'
+        '404':
+          description: Trade order not found
+    put:
+      summary: Update a trade order by ID
+      operationId: updateTradeOrder
+      tags: [TradeOrder]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TradeOrderPutDTO'
+      responses:
+        '200':
+          description: Trade order updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeOrderResponseDTO'
+        '404':
+          description: Trade order not found
+    delete:
+      summary: Delete a trade order by ID and version
+      operationId: deleteTradeOrder
+      tags: [TradeOrder]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Trade order deleted
+        '404':
+          description: Trade order not found
+  /destinations:
+    get:
+      summary: Get all destinations
+      operationId: getAllDestinations
+      tags: [Destination]
+      responses:
+        '200':
+          description: List of destinations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DestinationResponseDTO'
+    post:
+      summary: Create a new destination
+      operationId: createDestination
+      tags: [Destination]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DestinationPostDTO'
+      responses:
+        '201':
+          description: Destination created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationResponseDTO'
+  /destinations/{id}:
+    get:
+      summary: Get a destination by ID
+      operationId: getDestinationById
+      tags: [Destination]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Destination found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationResponseDTO'
+        '404':
+          description: Destination not found
+    put:
+      summary: Update a destination by ID
+      operationId: updateDestination
+      tags: [Destination]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DestinationPutDTO'
+      responses:
+        '200':
+          description: Destination updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationResponseDTO'
+        '404':
+          description: Destination not found
+    delete:
+      summary: Delete a destination by ID and version
+      operationId: deleteDestination
+      tags: [Destination]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Destination deleted
+        '404':
+          description: Destination not found
+  /tradeTypes:
+    get:
+      summary: Get all trade types
+      operationId: getAllTradeTypes
+      tags: [TradeType]
+      responses:
+        '200':
+          description: List of trade types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TradeTypeResponseDTO'
+    post:
+      summary: Create a new trade type
+      operationId: createTradeType
+      tags: [TradeType]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TradeTypePostDTO'
+      responses:
+        '201':
+          description: Trade type created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeTypeResponseDTO'
+  /tradeType/{id}:
+    get:
+      summary: Get a trade type by ID
+      operationId: getTradeTypeById
+      tags: [TradeType]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Trade type found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeTypeResponseDTO'
+        '404':
+          description: Trade type not found
+    put:
+      summary: Update a trade type by ID
+      operationId: updateTradeType
+      tags: [TradeType]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TradeTypePutDTO'
+      responses:
+        '200':
+          description: Trade type updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeTypeResponseDTO'
+        '404':
+          description: Trade type not found
+    delete:
+      summary: Delete a trade type by ID and version
+      operationId: deleteTradeType
+      tags: [TradeType]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Trade type deleted
+        '404':
+          description: Trade type not found
+  /executionStatuses:
+    get:
+      summary: Get all execution statuses
+      operationId: getAllExecutionStatuses
+      tags: [ExecutionStatus]
+      responses:
+        '200':
+          description: List of execution statuses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExecutionStatusResponseDTO'
+    post:
+      summary: Create a new execution status
+      operationId: createExecutionStatus
+      tags: [ExecutionStatus]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionStatusPostDTO'
+      responses:
+        '201':
+          description: Execution status created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionStatusResponseDTO'
+  /executionStatuses/{id}:
+    get:
+      summary: Get an execution status by ID
+      operationId: getExecutionStatusById
+      tags: [ExecutionStatus]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Execution status found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionStatusResponseDTO'
+        '404':
+          description: Execution status not found
+    put:
+      summary: Update an execution status by ID
+      operationId: updateExecutionStatus
+      tags: [ExecutionStatus]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionStatusPutDTO'
+      responses:
+        '200':
+          description: Execution status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionStatusResponseDTO'
+        '404':
+          description: Execution status not found
+    delete:
+      summary: Delete an execution status by ID and version
+      operationId: deleteExecutionStatus
+      tags: [ExecutionStatus]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Execution status deleted
+        '404':
+          description: Execution status not found
+        '409':
+          description: Version mismatch
+  /executions:
+    get:
+      summary: Get all executions
+      operationId: getAllExecutions
+      tags: [Execution]
+      responses:
+        '200':
+          description: List of executions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExecutionResponseDTO'
+    post:
+      summary: Create a new execution
+      operationId: createExecution
+      tags: [Execution]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionPostDTO'
+      responses:
+        '201':
+          description: Execution created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionResponseDTO'
+        '400':
+          description: Invalid input
+    
+  /executions/{id}:
+    get:
+      summary: Get a single execution by ID
+      operationId: getExecutionById
+      tags: [Execution]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Execution found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionResponseDTO'
+        '404':
+          description: Execution not found
+    put:
+      summary: Update an existing execution by ID
+      operationId: updateExecution
+      tags: [Execution]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionPutDTO'
+      responses:
+        '200':
+          description: Execution updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionResponseDTO'
+        '400':
+          description: Invalid input
+        '404':
+          description: Execution not found
+    delete:
+      summary: Delete an execution by ID and version
+      operationId: deleteExecution
+      tags: [Execution]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Execution deleted
+        '404':
+          description: Execution not found
+        '409':
+          description: Version mismatch
+  /health/liveness:
+    get:
+      summary: Liveness probe
+      operationId: livenessProbe
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+  /health/readiness:
+    get:
+      summary: Readiness probe
+      operationId: readinessProbe
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+  /health/startup:
+    get:
+      summary: Startup probe
+      operationId: startupProbe
+      tags: [Health]
+      responses:
+        '200':
+          description: Service has started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+components:
+  schemas:
+    BlotterResponseDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        abbreviation:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+      required: [id, abbreviation, name, version]
+    BlotterPutDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        abbreviation:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+      required: [id, abbreviation, name, version]
+    BlotterPostDTO:
+      type: object
+      properties:
+        abbreviation:
+          type: string
+        name:
+          type: string
+      required: [abbreviation, name]
+    TradeOrderResponseDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        orderId:
+          type: integer
+        portfolioId:
+          type: string
+        orderType:
+          type: string
+        securityId:
+          type: string
+        quantity:
+          type: number
+          format: double
+        limitPrice:
+          type: number
+          format: double
+        tradeTimestamp:
+          type: string
+          format: date-time
+        version:
+          type: integer
+        blotter:
+          $ref: '#/components/schemas/BlotterResponseDTO'
+      required: [id, orderId, portfolioId, orderType, securityId, quantity, tradeTimestamp, version, blotter]
+    TradeOrderPutDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        orderId:
+          type: integer
+        portfolioId:
+          type: string
+        orderType:
+          type: string
+        securityId:
+          type: string
+        quantity:
+          type: number
+          format: double
+        limitPrice:
+          type: number
+          format: double
+        tradeTimestamp:
+          type: string
+          format: date-time
+        version:
+          type: integer
+        blotterId:
+          type: integer
+      required: [id, orderId, portfolioId, orderType, securityId, quantity, tradeTimestamp, version, blotterId]
+    TradeOrderPostDTO:
+      type: object
+      properties:
+        orderId:
+          type: integer
+        portfolioId:
+          type: string
+        orderType:
+          type: string
+        securityId:
+          type: string
+        quantity:
+          type: number
+          format: double
+        limitPrice:
+          type: number
+          format: double
+        tradeTimestamp:
+          type: string
+          format: date-time
+        blotterId:
+          type: integer
+      required: [orderId, portfolioId, orderType, securityId, quantity, tradeTimestamp, blotterId]
+    DestinationResponseDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        abbreviation:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+      required: [id, abbreviation, description, version]
+    DestinationPutDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        abbreviation:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+      required: [id, abbreviation, description, version]
+    DestinationPostDTO:
+      type: object
+      properties:
+        abbreviation:
+          type: string
+        description:
+          type: string
+      required: [abbreviation, description]
+    TradeTypeResponseDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        abbreviation:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+      required: [id, abbreviation, description, version]
+    TradeTypePutDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        abbreviation:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+      required: [id, abbreviation, description, version]
+    TradeTypePostDTO:
+      type: object
+      properties:
+        abbreviation:
+          type: string
+        description:
+          type: string
+      required: [abbreviation, description]
+    ExecutionStatusResponseDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        abbreviation:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+      required: [id, abbreviation, description, version]
+    ExecutionStatusPutDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        abbreviation:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+      required: [id, abbreviation, description, version]
+    ExecutionStatusPostDTO:
+      type: object
+      properties:
+        abbreviation:
+          type: string
+        description:
+          type: string
+      required: [abbreviation, description]
+    ExecutionResponseDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        executionTimestamp:
+          type: string
+          format: date-time
+        executionStatus:
+          $ref: '#/components/schemas/ExecutionStatusResponseDTO'
+        blotter:
+          $ref: '#/components/schemas/BlotterResponseDTO'
+        tradeType:
+          $ref: '#/components/schemas/TradeTypeResponseDTO'
+        tradeOrder:
+          $ref: '#/components/schemas/TradeOrderResponseDTO'
+        destination:
+          $ref: '#/components/schemas/DestinationResponseDTO'
+        quantityOrdered:
+          type: integer
+        quantityPlaced:
+          type: number
+          format: double
+        quantityFilled:
+          type: number
+          format: double
+        limitPrice:
+          type: number
+          format: double
+        version:
+          type: integer
+    ExecutionPutDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+        executionTimestamp:
+          type: string
+          format: date-time
+        executionStatusId:
+          type: integer
+        blotterId:
+          type: integer
+        tradeTypeId:
+          type: integer
+        tradeOrderId:
+          type: integer
+        destinationId:
+          type: integer
+        quantityOrdered:
+          type: integer
+        quantityPlaced:
+          type: number
+          format: double
+        quantityFilled:
+          type: number
+          format: double
+        limitPrice:
+          type: number
+          format: double
+        version:
+          type: integer
+    ExecutionPostDTO:
+      type: object
+      properties:
+        executionTimestamp:
+          type: string
+          format: date-time
+        executionStatusId:
+          type: integer
+        blotterId:
+          type: integer
+        tradeTypeId:
+          type: integer
+        tradeOrderId:
+          type: integer
+        destinationId:
+          type: integer
+        quantityOrdered:
+          type: integer
+        quantityPlaced:
+          type: number
+          format: double
+        quantityFilled:
+          type: number
+          format: double
+        limitPrice:
+          type: number
+          format: double 
