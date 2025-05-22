@@ -6,7 +6,7 @@
 
 ## GitHub CI-CD
 
-* At GitHub CI-CD to perform a multiarchitecture build (ARM and AMD for Linux) and deploy to DockerHub.  
+* Add GitHub CI-CD (actions) to perform a multiarchitecture build (ARM and AMD for Linux) and deploy to DockerHub.  
 
 ## Test Containers
 

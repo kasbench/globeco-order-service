@@ -629,3 +629,22 @@ These endpoints are generated from your controllers and models. You can use them
 ## CORS Policy
 
 All API endpoints in the GlobeCo Order Service allow requests from any origin (CORS is enabled globally for all origins, methods, and headers). This is configured to facilitate integration with any client or service, as required by the supplemental requirements.
+
+## CI/CD: Multi-Architecture Docker Build & Deployment
+
+This project uses GitHub Actions to build and push multi-architecture (AMD64 and ARM64) Docker images to DockerHub. The workflow is defined in `.github/workflows/docker-multiarch.yml` and is triggered on pushes and pull requests to the `main` branch.
+
+**Workflow summary:**
+- Checks out the code and sets up JDK 21
+- Caches Gradle dependencies for faster builds
+- Builds the Spring Boot JAR
+- Uses Docker Buildx to build images for both AMD64 and ARM64
+- Logs in to DockerHub using repository secrets
+- Pushes the image to DockerHub with both `latest` and commit SHA tags (on push to main)
+
+**Required GitHub Secrets:**
+- `DOCKERHUB_USERNAME`: Your DockerHub username
+- `DOCKERHUB_TOKEN`: A DockerHub access token or password
+- `DOCKERHUB_REPO`: The DockerHub repository name (e.g., `globeco-order-service`)
+
+This ensures that every commit to main is built and published as a multi-architecture image, ready for deployment on any platform.
