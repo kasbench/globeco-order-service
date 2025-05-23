@@ -403,6 +403,7 @@ The **Order** resource in the GlobeCo Order Service represents a trading order, 
 | limitPrice     | Decimal(18,8)       | Yes      | Price limit for the order (if applicable)           |
 | orderTimestamp | OffsetDateTime      | No       | When the order was placed                           |
 | version        | Integer             | No       | Optimistic locking version number                   |
+| tradeOrderId   | Integer             | Yes      | ID returned from trade service after submission     |
 
 #### OrderDTO for POST/PUT
 | Field           | Type             | Nullable | Description                                         |
@@ -417,6 +418,7 @@ The **Order** resource in the GlobeCo Order Service represents a trading order, 
 | limitPrice      | Decimal(18,8)    | Yes      | Price limit for the order (if applicable)           |
 | orderTimestamp  | OffsetDateTime   | No       | When the order was placed                           |
 | version         | Integer          | No       | Optimistic locking version number                   |
+| tradeOrderId    | Integer          | Yes      | ID returned from trade service after submission     |
 
 ### Order API Endpoints
 | Method | Path                                 | Request Body         | Response Body            | Description                                 |
@@ -453,7 +455,8 @@ The **Order** resource in the GlobeCo Order Service represents a trading order, 
   "quantity": 100.00000000,
   "limitPrice": 50.25000000,
   "orderTimestamp": "2024-06-01T12:00:00Z",
-  "version": 1
+  "version": 1,
+  "tradeOrderId": 99999
 }
 ```
 
@@ -468,7 +471,8 @@ The **Order** resource in the GlobeCo Order Service represents a trading order, 
   "quantity": 100.00000000,
   "limitPrice": 50.25000000,
   "orderTimestamp": "2024-06-01T12:00:00Z",
-  "version": 1
+  "version": 1,
+  "tradeOrderId": 99999
 }
 ```
 
@@ -490,7 +494,8 @@ Response:
     "quantity": 100.00000000,
     "limitPrice": 50.25000000,
     "orderTimestamp": "2024-06-01T12:00:00Z",
-    "version": 1
+    "version": 1,
+    "tradeOrderId": 99999
   },
   ...
 ]
@@ -511,7 +516,8 @@ Content-Type: application/json
   "quantity": 100.00000000,
   "limitPrice": 50.25000000,
   "orderTimestamp": "2024-06-01T12:00:00Z",
-  "version": 1
+  "version": 1,
+  "tradeOrderId": 99999
 }
 ```
 Response:
@@ -526,7 +532,8 @@ Response:
   "quantity": 100.00000000,
   "limitPrice": 50.25000000,
   "orderTimestamp": "2024-06-01T12:00:00Z",
-  "version": 1
+  "version": 1,
+  "tradeOrderId": 99999
 }
 ```
 
@@ -546,7 +553,8 @@ Content-Type: application/json
   "quantity": 100.00000000,
   "limitPrice": 50.25000000,
   "orderTimestamp": "2024-06-01T12:00:00Z",
-  "version": 2
+  "version": 2,
+  "tradeOrderId": 99999
 }
 ```
 Response:
@@ -561,7 +569,8 @@ Response:
   "quantity": 100.00000000,
   "limitPrice": 50.25000000,
   "orderTimestamp": "2024-06-01T12:00:00Z",
-  "version": 2
+  "version": 2,
+  "tradeOrderId": 99999
 }
 ```
 
@@ -653,7 +662,7 @@ This ensures that every commit to main is built and published as a multi-archite
 
 #### POST /api/v1/orders/{id}/submit
 
-Submits an order to the GlobeCo Trade Service. This endpoint calls the trade service's POST /api/v1/tradeOrders API, mapping the order fields as required. If the submission is successful, the order status is updated from "NEW" to "SENT".
+Submits an order to the GlobeCo Trade Service. This endpoint calls the trade service's POST /api/v1/tradeOrders API, mapping the order fields as required. If the submission is successful, the order status is updated from "NEW" to "SENT" and the tradeOrderId field is set in the order service.
 
 - **Request:** No body required. The order must be in status "NEW".
 - **Response:**
@@ -679,4 +688,4 @@ Response (failure):
 - This endpoint is used to submit an order for execution.
 - The order is sent to the trade service at http://localhost:8082/api/v1/tradeOrders.
 - Only orders with status "NEW" can be submitted.
-- On success, the order status is updated to "SENT" in the order service.
+- On success, the order status is updated to "SENT" and the tradeOrderId field is set in the order service.

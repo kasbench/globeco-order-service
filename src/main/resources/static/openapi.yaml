@@ -566,6 +566,10 @@ components:
           format: double
           nullable: true
           example: 50.25000000
+        tradeOrderId:
+          type: integer
+          nullable: true
+          example: 99999
         orderTimestamp:
           type: string
           format: date-time
@@ -602,6 +606,10 @@ components:
           format: double
           nullable: true
           example: 50.25000000
+        tradeOrderId:
+          type: integer
+          nullable: true
+          example: 99999
         orderTimestamp:
           type: string
           format: date-time
@@ -637,6 +645,10 @@ components:
           format: double
           nullable: true
           example: 50.25000000
+        tradeOrderId:
+          type: integer
+          nullable: true
+          example: 99999
         orderTimestamp:
           type: string
           format: date-time
