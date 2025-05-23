@@ -22,6 +22,7 @@ CREATE TABLE "order" (
     quantity decimal(18,8) NOT NULL,
     limit_price decimal(18,8),
     order_timestamp timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    trade_order_id integer,
     version integer NOT NULL DEFAULT 1,
     CONSTRAINT order_pk PRIMARY KEY (id)
 );
@@ -56,3 +57,9 @@ ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "order" ADD CONSTRAINT status_order_fk FOREIGN KEY (status_id)
 REFERENCES status (id) MATCH FULL
 ON DELETE RESTRICT ON UPDATE CASCADE; 
+
+CREATE UNIQUE INDEX order_trade_order_ndx ON public."order"
+USING btree
+(
+	trade_order_id
+);

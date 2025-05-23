@@ -20,6 +20,7 @@ public class OrderDTO {
     private String securityId;
     private BigDecimal quantity;
     private BigDecimal limitPrice;
+    private Integer tradeOrderId;
     private OffsetDateTime orderTimestamp;
     private Integer version;
 } 

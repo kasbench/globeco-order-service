@@ -46,6 +46,7 @@ public class OrderService {
         order.setSecurityId(dto.getSecurityId());
         order.setQuantity(dto.getQuantity());
         order.setLimitPrice(dto.getLimitPrice());
+        order.setTradeOrderId(dto.getTradeOrderId());
         order.setOrderTimestamp(dto.getOrderTimestamp());
         order.setVersion(dto.getVersion());
         return toWithDetailsDTO(orderRepository.save(order));
@@ -65,6 +66,7 @@ public class OrderService {
             existing.setSecurityId(dto.getSecurityId());
             existing.setQuantity(dto.getQuantity());
             existing.setLimitPrice(dto.getLimitPrice());
+            existing.setTradeOrderId(dto.getTradeOrderId());
             existing.setOrderTimestamp(dto.getOrderTimestamp());
             existing.setVersion(dto.getVersion());
             return toWithDetailsDTO(orderRepository.save(existing));
@@ -123,6 +125,7 @@ public class OrderService {
                 .securityId(order.getSecurityId())
                 .quantity(order.getQuantity())
                 .limitPrice(order.getLimitPrice())
+                .tradeOrderId(order.getTradeOrderId())
                 .orderTimestamp(order.getOrderTimestamp())
                 .version(order.getVersion())
                 .build();

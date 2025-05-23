@@ -17,10 +17,12 @@ This is the second supplemental requirement for the order service. The data mode
 
 2. **DTO and Service Update:**  
    - Update all relevant order DTOs (`OrderDTO`, `OrderPostDTO`, `OrderWithDetailsDTO`) and the service layer to include a `tradeOrderId` field mapped to the new column.
+   - Update all relevant tests to reflect this change.
 
 3. **Order Submission Endpoint:**  
    - In the implementation of `api/v1/orders/{id}/submit`, after calling the trade service, save the `id` returned from the trade service as the `trade_order_id` (`tradeOrderId`) for the order.
    - If the trade service call fails, ensure the `tradeOrderId` remains null and handle the error appropriately (e.g., return a 400 or 500 error).
+   - Update all relevant tests.
 
 4. **Documentation:**  
    - Update [README.md](mdc:README.md) and [openapi.yaml](mdc:openapi.yaml) (and [openapi.yaml](mdc:src/main/resources/static/openapi.yaml), if applicable) to reflect these changes, including schema definitions and example payloads.

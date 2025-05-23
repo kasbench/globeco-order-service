@@ -43,6 +43,9 @@ public class Order {
     @Column(name = "limit_price", precision = 18, scale = 8)
     private BigDecimal limitPrice;
 
+    @Column(name = "trade_order_id")
+    private Integer tradeOrderId;
+
     @Column(name = "order_timestamp", nullable = false)
     private OffsetDateTime orderTimestamp;
 
