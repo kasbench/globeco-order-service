@@ -11,6 +11,7 @@
 ## Test Containers
 
 * Modify tests to use testcontainers
+* Add integration tests using testcontainers.
 
 ## New requirement
 
