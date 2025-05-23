@@ -9,7 +9,7 @@
 
 -- object: postgres | type: DATABASE --
 -- DROP DATABASE IF EXISTS postgres;
-CREATE DATABASE postgres;
+--CREATE DATABASE postgres;
 -- ddl-end --
 
 
@@ -45,7 +45,7 @@ CREATE TABLE public."order" (
 	CONSTRAINT order_pk PRIMARY KEY (id)
 );
 -- ddl-end --
-ALTER TABLE public."order" OWNER TO postgres;
+--ALTER TABLE public."order" OWNER TO postgres;
 -- ddl-end --
 
 -- object: blotter_order_fk | type: CONSTRAINT --
