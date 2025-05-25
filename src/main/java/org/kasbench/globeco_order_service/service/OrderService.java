@@ -56,7 +56,7 @@ public class OrderService {
                 .limitPrice(order.getLimitPrice())
                 .build();
         ResponseEntity<String> response = restTemplate.postForEntity(
-                "http://trade-service/trade-orders",
+                "http://globeco-trade-service/tradeOrders",
                 new HttpEntity<>(tradeOrder),
                 String.class
         );
