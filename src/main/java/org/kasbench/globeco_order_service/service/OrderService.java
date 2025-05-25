@@ -50,7 +50,9 @@ public class OrderService {
             return false;
         }
         TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
+                .orderId(id)
                 .portfolioId(order.getPortfolioId())
+                .orderType(order.getOrderType().getAbbreviation())
                 .securityId(order.getSecurityId())
                 .quantity(order.getQuantity())
                 .limitPrice(order.getLimitPrice())
