@@ -666,7 +666,7 @@ Submits an order to the GlobeCo Trade Service. This endpoint calls the trade ser
 
 - **Request:** No body required. The order must be in status "NEW".
 - **Response:**
-  - 200 OK: `{ "status": "submitted" }` (if successful)
+  - 200 OK: Returns the updated OrderDTO (see below)
   - 400 Bad Request: `{ "status": "not submitted" }` (if not in NEW status or trade service call fails)
 
 **Example:**
@@ -675,7 +675,17 @@ POST /api/v1/orders/42/submit
 
 Response (success):
 {
-  "status": "submitted"
+  "id": 42,
+  "blotterId": 1,
+  "statusId": 2,
+  "portfolioId": "5f47ac10b8e4e53b8cfa9b1a",
+  "orderTypeId": 3,
+  "securityId": "5f47ac10b8e4e53b8cfa9b1b",
+  "quantity": 100.00000000,
+  "limitPrice": 50.25000000,
+  "tradeOrderId": 99999,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 2
 }
 
 Response (failure):

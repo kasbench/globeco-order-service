@@ -150,4 +150,35 @@ public class OrderControllerTest {
         mockMvc.perform(delete("/api/v1/order/10?version=1"))
                 .andExpect(status().isConflict());
     }
+
+    @Test
+    void testSubmitOrder_success() throws Exception {
+        OrderDTO submittedOrder = OrderDTO.builder()
+            .id(orderDTO.getId())
+            .blotterId(orderDTO.getBlotterId())
+            .statusId(2)
+            .portfolioId(orderDTO.getPortfolioId())
+            .orderTypeId(orderDTO.getOrderTypeId())
+            .securityId(orderDTO.getSecurityId())
+            .quantity(orderDTO.getQuantity())
+            .limitPrice(orderDTO.getLimitPrice())
+            .tradeOrderId(99999)
+            .orderTimestamp(orderDTO.getOrderTimestamp())
+            .version(orderDTO.getVersion())
+            .build();
+        Mockito.when(orderService.submitOrder(10)).thenReturn(submittedOrder);
+        mockMvc.perform(post("/api/v1/orders/10/submit"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(10))
+                .andExpect(jsonPath("$.tradeOrderId").value(99999))
+                .andExpect(jsonPath("$.statusId").value(2));
+    }
+
+    @Test
+    void testSubmitOrder_failure() throws Exception {
+        Mockito.when(orderService.submitOrder(10)).thenReturn(null);
+        mockMvc.perform(post("/api/v1/orders/10/submit"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value("not submitted"));
+    }
 } 

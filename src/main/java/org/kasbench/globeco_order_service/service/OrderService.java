@@ -44,10 +44,10 @@ public class OrderService {
     }
 
     @Transactional
-    public boolean submitOrder(Integer id) {
+    public OrderDTO submitOrder(Integer id) {
         Order order = orderRepository.findById(id).orElseThrow();
         if (!order.getStatus().getAbbreviation().equals("NEW")) {
-            return false;
+            return null;
         }
         TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
                 .orderId(id)
@@ -80,7 +80,7 @@ public class OrderService {
                 .findFirst()
                 .orElseThrow();
         if (tradeOrderId == null) {
-            return false;
+            return null;
         }
         // Create a new Order instance with updated tradeOrderId and status
         Order updatedOrder = Order.builder()
@@ -97,8 +97,8 @@ public class OrderService {
                 .version(order.getVersion())
                 .build();
         System.out.println("DEBUG: about to save order: " + updatedOrder);
-        orderRepository.save(updatedOrder);
-        return true;
+        Order savedOrder = orderRepository.save(updatedOrder);
+        return toOrderDTO(savedOrder);
     }
 
     // Minimal mapping from Order to OrderWithDetailsDTO for test compatibility
@@ -168,5 +168,23 @@ public class OrderService {
             return true;
         }
         return false;
+    }
+
+    // Add a mapping method from Order to OrderDTO
+    private OrderDTO toOrderDTO(Order order) {
+        if (order == null) return null;
+        return OrderDTO.builder()
+                .id(order.getId())
+                .blotterId(order.getBlotter() != null ? order.getBlotter().getId() : null)
+                .statusId(order.getStatus() != null ? order.getStatus().getId() : null)
+                .portfolioId(order.getPortfolioId())
+                .orderTypeId(order.getOrderType() != null ? order.getOrderType().getId() : null)
+                .securityId(order.getSecurityId())
+                .quantity(order.getQuantity())
+                .limitPrice(order.getLimitPrice())
+                .tradeOrderId(order.getTradeOrderId())
+                .orderTimestamp(order.getOrderTimestamp())
+                .version(order.getVersion())
+                .build();
     }
 } 

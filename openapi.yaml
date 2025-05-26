@@ -457,7 +457,7 @@ paths:
       summary: Submit an order to the trade service
       description: >
         Submits the order with the given ID to the GlobeCo Trade Service (calls POST /api/v1/tradeOrders on the trade service).
-        If successful, updates the order status from "NEW" to "SENT".
+        If successful, updates the order status from "NEW" to "SENT" and returns the updated OrderDTO.
       parameters:
         - name: id
           in: path
@@ -470,11 +470,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: submitted
+                $ref: '#/components/schemas/OrderDTO'
         '400':
           description: Order could not be submitted (not NEW or trade service error)
           content:

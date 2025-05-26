@@ -53,9 +53,9 @@ public class OrderController {
 
     @PostMapping("/orders/{id}/submit")
     public ResponseEntity<?> submitOrder(@PathVariable Integer id) {
-        boolean submitted = orderService.submitOrder(id);
-        if (submitted) {
-            return ResponseEntity.ok().body(java.util.Collections.singletonMap("status", "submitted"));
+        OrderDTO orderDTO = orderService.submitOrder(id);
+        if (orderDTO != null) {
+            return ResponseEntity.ok(orderDTO);
         } else {
             return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("status", "not submitted"));
         }

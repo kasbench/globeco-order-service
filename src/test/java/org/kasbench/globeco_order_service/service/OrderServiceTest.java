@@ -104,23 +104,15 @@ public class OrderServiceTest {
                 .build();
         when(orderRepository.findById(1)).thenReturn(Optional.of(order));
         String tradeServiceResponse = "{\"id\":99999}";
-        System.out.println("DEBUG: Mocking trade service response: " + tradeServiceResponse);
         when(restTemplate.postForEntity(anyString(), any(), eq(String.class)))
             .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body(tradeServiceResponse));
         Status sentStatus = Status.builder().id(2).abbreviation("SENT").description("Sent").version(1).build();
         when(statusRepository.findAll()).thenReturn(Arrays.asList(status, sentStatus));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        boolean result = orderService.submitOrder(1);
-        System.out.println("DEBUG: submitOrder result: " + result);
-        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
-        verify(orderRepository, atLeastOnce()).save(orderCaptor.capture());
-        for (Order o : orderCaptor.getAllValues()) {
-            System.out.println("DEBUG: captured order tradeOrderId: " + o.getTradeOrderId() + ", status: " + (o.getStatus() != null ? o.getStatus().getAbbreviation() : null));
-        }
-        Order savedOrder = orderCaptor.getValue();
-        System.out.println("DEBUG: savedOrder.tradeOrderId: " + savedOrder.getTradeOrderId());
-        assertEquals(99999, savedOrder.getTradeOrderId());
-        assertEquals("SENT", savedOrder.getStatus().getAbbreviation());
+        OrderDTO result = orderService.submitOrder(1);
+        assertNotNull(result);
+        assertEquals(99999, result.getTradeOrderId());
+        assertEquals(2, result.getStatusId());
     }
 
     @Test
@@ -130,8 +122,8 @@ public class OrderServiceTest {
         Order order = Order.builder().id(1).status(notNew).build();
         when(orderRepository.findById(1)).thenReturn(Optional.of(order));
         when(statusRepository.findAll()).thenReturn(Arrays.asList(notNew));
-        boolean result = orderService.submitOrder(1);
-        assertFalse(result);
+        OrderDTO result = orderService.submitOrder(1);
+        assertNull(result);
         verify(orderRepository, never()).save(any());
     }
 
@@ -154,14 +146,12 @@ public class OrderServiceTest {
         when(orderRepository.findById(1)).thenReturn(Optional.of(order));
         when(restTemplate.postForEntity(anyString(), any(), eq(String.class)))
             .thenReturn(ResponseEntity.status(HttpStatus.BAD_REQUEST).body("fail"));
-        // Mock statusRepository.findAll() to return a SENT status to prevent NoSuchElementException
         Status sentStatus = Status.builder().id(2).abbreviation("SENT").description("Sent").version(1).build();
         when(statusRepository.findAll()).thenReturn(Arrays.asList(status, sentStatus));
-        // Mock all required repository calls for submitOrder
         when(blotterRepository.findById(anyInt())).thenReturn(Optional.of(blotter));
         when(orderTypeRepository.findById(anyInt())).thenReturn(Optional.of(orderType));
-        boolean result = orderService.submitOrder(1);
-        assertFalse(result);
+        OrderDTO result = orderService.submitOrder(1);
+        assertNull(result);
         assertNull(order.getTradeOrderId());
         verify(orderRepository, never()).save(any());
     }
