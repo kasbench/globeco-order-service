@@ -31,7 +31,7 @@ public class OrderController {
     @PostMapping("/orders")
     public ResponseEntity<OrderWithDetailsDTO> createOrder(@RequestBody OrderPostDTO dto) {
         OrderWithDetailsDTO created = orderService.create(dto);
-        return ResponseEntity.ok(created);
+        return ResponseEntity.status(201).body(created);
     }
 
     @PutMapping("/order/{id}")

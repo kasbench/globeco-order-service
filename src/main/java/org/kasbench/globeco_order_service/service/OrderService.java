@@ -2,7 +2,12 @@ package org.kasbench.globeco_order_service.service;
 
 import org.kasbench.globeco_order_service.entity.Order;
 import org.kasbench.globeco_order_service.entity.Status;
+import org.kasbench.globeco_order_service.entity.Blotter;
+import org.kasbench.globeco_order_service.entity.OrderType;
 import org.kasbench.globeco_order_service.dto.TradeOrderPostDTO;
+import org.kasbench.globeco_order_service.dto.BlotterDTO;
+import org.kasbench.globeco_order_service.dto.StatusDTO;
+import org.kasbench.globeco_order_service.dto.OrderTypeDTO;
 import org.kasbench.globeco_order_service.repository.OrderRepository;
 import org.kasbench.globeco_order_service.repository.StatusRepository;
 import org.kasbench.globeco_order_service.repository.BlotterRepository;
@@ -101,22 +106,55 @@ public class OrderService {
         return toOrderDTO(savedOrder);
     }
 
-    // Minimal mapping from Order to OrderWithDetailsDTO for test compatibility
+    // Complete mapping from Order to OrderWithDetailsDTO
     private OrderWithDetailsDTO toDto(Order order) {
         if (order == null) return null;
-        OrderWithDetailsDTO dto = new OrderWithDetailsDTO();
-        dto.setId(order.getId());
-        dto.setTradeOrderId(order.getTradeOrderId());
-        dto.setVersion(order.getVersion());
-        // Set additional fields for test assertions if needed
-        // e.g., dto.setPortfolioId(order.getPortfolioId());
-        // dto.setStatus(order.getStatus());
-        // dto.setOrderType(order.getOrderType());
-        // dto.setSecurityId(order.getSecurityId());
-        // dto.setQuantity(order.getQuantity());
-        // dto.setLimitPrice(order.getLimitPrice());
-        // dto.setOrderTimestamp(order.getOrderTimestamp());
-        return dto;
+        
+        return OrderWithDetailsDTO.builder()
+                .id(order.getId())
+                .blotter(toBlotterDTO(order.getBlotter()))
+                .status(toStatusDTO(order.getStatus()))
+                .portfolioId(order.getPortfolioId())
+                .orderType(toOrderTypeDTO(order.getOrderType()))
+                .securityId(order.getSecurityId())
+                .quantity(order.getQuantity())
+                .limitPrice(order.getLimitPrice())
+                .tradeOrderId(order.getTradeOrderId())
+                .orderTimestamp(order.getOrderTimestamp())
+                .version(order.getVersion())
+                .build();
+    }
+
+    // Helper method to convert Blotter entity to BlotterDTO
+    private BlotterDTO toBlotterDTO(Blotter blotter) {
+        if (blotter == null) return null;
+        return BlotterDTO.builder()
+                .id(blotter.getId())
+                .name(blotter.getName())
+                .version(blotter.getVersion())
+                .build();
+    }
+
+    // Helper method to convert Status entity to StatusDTO
+    private StatusDTO toStatusDTO(Status status) {
+        if (status == null) return null;
+        return StatusDTO.builder()
+                .id(status.getId())
+                .abbreviation(status.getAbbreviation())
+                .description(status.getDescription())
+                .version(status.getVersion())
+                .build();
+    }
+
+    // Helper method to convert OrderType entity to OrderTypeDTO
+    private OrderTypeDTO toOrderTypeDTO(OrderType orderType) {
+        if (orderType == null) return null;
+        return OrderTypeDTO.builder()
+                .id(orderType.getId())
+                .abbreviation(orderType.getAbbreviation())
+                .description(orderType.getDescription())
+                .version(orderType.getVersion())
+                .build();
     }
 
     public List<OrderWithDetailsDTO> getAll() {

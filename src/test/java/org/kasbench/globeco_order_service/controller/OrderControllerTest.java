@@ -110,7 +110,7 @@ public class OrderControllerTest {
         String response = mockMvc.perform(post("/api/v1/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(orderPostDTO)))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         OrderWithDetailsDTO result = objectMapper.readValue(response, OrderWithDetailsDTO.class);
         org.junit.jupiter.api.Assertions.assertEquals(10, result.getId());

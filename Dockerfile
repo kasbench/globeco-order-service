@@ -5,7 +5,7 @@
 # RUN gradle build --no-daemon
 
 # ---- Runtime stage ----
-FROM eclipse-temurin:21-jre-alpine as runtime
+FROM eclipse-temurin:21-jre-alpine AS runtime
 
 # Set the working directory
 WORKDIR /app
