@@ -1,10 +1,20 @@
 openapi: 3.0.3
 info:
-  title: GlobeCo Order Service - Status API
-  version: 1.0.0
+  title: GlobeCo Order Service API
+  version: 2.0.0
   description: |
-    OpenAPI specification for the Status API in the GlobeCo Order Service.
-    Provides endpoints to manage order status values.
+    OpenAPI specification for the GlobeCo Order Service.
+    Provides comprehensive endpoints to manage orders, statuses, order types, and blotters.
+    
+    **Key Features:**
+    - **Batch Order Processing**: Create up to 1000 orders in a single request with detailed success/failure reporting
+    - **Non-atomic Processing**: Individual order failures don't affect other orders in the batch
+    - **Comprehensive Error Handling**: Detailed validation and error messages for each order
+    - **RESTful HTTP Status Codes**: Proper use of 200, 207, 400, 413, and 500 status codes
+    
+    **Breaking Changes in v2.0.0:**
+    - `/orders` POST endpoint now accepts arrays of orders instead of single orders
+    - Response format changed from `OrderWithDetailsDTO` to `OrderListResponseDTO`
 servers:
   - url: /api/v1
 paths:
@@ -329,24 +339,197 @@ paths:
                 items:
                   $ref: '#/components/schemas/OrderWithDetailsDTO'
     post:
-      summary: Create a new order
-      operationId: createOrder
+      summary: Create orders in batch
+      operationId: createOrdersBatch
       tags: [Order]
+      description: |
+        Create multiple orders in a single batch request. Supports up to 1000 orders per batch.
+        Returns comprehensive results including success/failure status for each order.
+        
+        **HTTP Status Codes:**
+        - `200` - All orders processed successfully
+        - `207` - Partial success (some orders succeeded, others failed) 
+        - `400` - Request validation failed
+        - `413` - Batch size exceeds maximum allowed (1000 orders)
+        - `500` - Unexpected server error
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OrderPostDTO'
+              type: array
+              items:
+                $ref: '#/components/schemas/OrderPostDTO'
+              minItems: 1
+              maxItems: 1000
+              example:
+                - blotterId: 1
+                  statusId: 1
+                  portfolioId: "PORT123456789012345678"
+                  orderTypeId: 2
+                  securityId: "SEC123456789012345678901"
+                  quantity: 100.00000000
+                  limitPrice: 50.25000000
+                  orderTimestamp: "2024-06-01T12:00:00Z"
+                  version: 1
+                - blotterId: 1
+                  statusId: 1
+                  portfolioId: "PORT987654321098765432"
+                  orderTypeId: 3
+                  securityId: "SEC987654321098765432109"
+                  quantity: 200.00000000
+                  limitPrice: 75.50000000
+                  orderTimestamp: "2024-06-01T12:01:00Z"
+                  version: 1
       responses:
         '200':
-          description: The created order (with details)
+          description: All orders processed successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderWithDetailsDTO'
+                $ref: '#/components/schemas/OrderListResponseDTO'
+              example:
+                status: "SUCCESS"
+                message: "All orders processed successfully"
+                totalReceived: 2
+                successful: 2
+                failed: 0
+                orders:
+                  - status: "SUCCESS"
+                    message: "Order created successfully"
+                    orderDetails:
+                      id: 101
+                      blotter:
+                        id: 1
+                        name: "Default"
+                        version: 1
+                      status:
+                        id: 1
+                        abbreviation: "NEW"
+                        description: "New"
+                        version: 1
+                      portfolioId: "PORT123456789012345678"
+                      orderType:
+                        id: 2
+                        abbreviation: "BUY"
+                        description: "Buy"
+                        version: 1
+                      securityId: "SEC123456789012345678901"
+                      quantity: 100.00000000
+                      limitPrice: 50.25000000
+                      orderTimestamp: "2024-06-01T12:00:00Z"
+                      version: 1
+                    orderId: 101
+                    requestIndex: 0
+                  - status: "SUCCESS"
+                    message: "Order created successfully"
+                    orderDetails:
+                      id: 102
+                      blotter:
+                        id: 1
+                        name: "Default"
+                        version: 1
+                      status:
+                        id: 1
+                        abbreviation: "NEW"
+                        description: "New"
+                        version: 1
+                      portfolioId: "PORT987654321098765432"
+                      orderType:
+                        id: 3
+                        abbreviation: "SELL"
+                        description: "Sell"
+                        version: 1
+                      securityId: "SEC987654321098765432109"
+                      quantity: 200.00000000
+                      limitPrice: 75.50000000
+                      orderTimestamp: "2024-06-01T12:01:00Z"
+                      version: 1
+                    orderId: 102
+                    requestIndex: 1
+        '207':
+          description: Partial success or all orders failed during processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponseDTO'
+              example:
+                status: "PARTIAL"
+                message: "Some orders processed successfully, others failed"
+                totalReceived: 2
+                successful: 1
+                failed: 1
+                orders:
+                  - status: "SUCCESS"
+                    message: "Order created successfully"
+                    orderDetails:
+                      id: 101
+                      blotter:
+                        id: 1
+                        name: "Default"
+                        version: 1
+                      status:
+                        id: 1
+                        abbreviation: "NEW"
+                        description: "New"
+                        version: 1
+                      portfolioId: "PORT123456789012345678"
+                      orderType:
+                        id: 2
+                        abbreviation: "BUY"
+                        description: "Buy"
+                        version: 1
+                      securityId: "SEC123456789012345678901"
+                      quantity: 100.00000000
+                      limitPrice: 50.25000000
+                      orderTimestamp: "2024-06-01T12:00:00Z"
+                      version: 1
+                    orderId: 101
+                    requestIndex: 0
+                  - status: "FAILURE"
+                    message: "Blotter with ID 999 not found"
+                    orderDetails: null
+                    orderId: null
+                    requestIndex: 1
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponseDTO'
+              example:
+                status: "FAILURE"
+                message: "Request validation failed: Invalid request data"
+                totalReceived: 0
+                successful: 0
+                failed: 0
+                orders: []
+        '413':
+          description: Batch size exceeds maximum allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponseDTO'
+              example:
+                status: "FAILURE"
+                message: "Batch size 1001 exceeds maximum allowed size of 1000"
+                totalReceived: 0
+                successful: 0
+                failed: 0
+                orders: []
+        '500':
+          description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponseDTO'
+              example:
+                status: "FAILURE"
+                message: "Internal server error processing batch request"
+                totalReceived: 0
+                successful: 0
+                failed: 0
+                orders: []
   /order/{id}:
     get:
       summary: Get an order by ID
@@ -693,6 +876,69 @@ components:
           type: string
           example: UP
       required: [status]
+    OrderPostResponseDTO:
+      type: object
+      description: Response DTO for individual order processing results in batch operations
+      properties:
+        status:
+          type: string
+          enum: [SUCCESS, FAILURE]
+          description: Status of the individual order processing
+          example: "SUCCESS"
+        message:
+          type: string
+          description: Human-readable message describing the result
+          example: "Order created successfully"
+        orderDetails:
+          allOf:
+            - $ref: '#/components/schemas/OrderWithDetailsDTO'
+          nullable: true
+          description: Complete order details if processing was successful, null if failed
+        orderId:
+          type: integer
+          nullable: true
+          description: The ID of the created order if successful, null if failed
+          example: 101
+        requestIndex:
+          type: integer
+          description: Zero-based index of this order in the original request array
+          example: 0
+      required: [status, message, requestIndex]
+    OrderListResponseDTO:
+      type: object
+      description: Response DTO for batch order processing operations
+      properties:
+        status:
+          type: string
+          enum: [SUCCESS, PARTIAL, FAILURE]
+          description: |
+            Overall status of the batch operation:
+            - SUCCESS: All orders processed successfully
+            - PARTIAL: Some orders succeeded, some failed
+            - FAILURE: All orders failed or validation error
+          example: "SUCCESS"
+        message:
+          type: string
+          description: Human-readable message describing the overall result
+          example: "All orders processed successfully"
+        totalReceived:
+          type: integer
+          description: Total number of orders received in the request
+          example: 2
+        successful:
+          type: integer
+          description: Number of orders processed successfully
+          example: 2
+        failed:
+          type: integer
+          description: Number of orders that failed processing
+          example: 0
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderPostResponseDTO'
+          description: Array of individual order processing results
+      required: [status, message, totalReceived, successful, failed, orders]
   responses:
     NotFound:
       description: Resource not found
