@@ -295,12 +295,17 @@ public class OrderDtoIntegrationTest {
         Status status = statusRepository.findAll().get(0);
         OrderType orderType = orderTypeRepository.findAll().get(0);
         
+        // Generate short IDs that fit database constraints (24 chars max for portfolio_id)
+        String timestamp = String.valueOf(System.currentTimeMillis() % 1000000); // Keep last 6 digits
+        String portfolioId = "PORT" + timestamp; // Results in ~10 chars, well under 24 limit
+        String securityId = "SEC" + timestamp;   // Results in ~9 chars, well under 24 limit
+        
         return OrderPostDTO.builder()
             .blotterId(blotter.getId())
             .statusId(status.getId())
-            .portfolioId("BATCH_PORTFOLIO_" + System.currentTimeMillis())
+            .portfolioId(portfolioId)
             .orderTypeId(orderType.getId())
-            .securityId("BATCH_SECURITY_" + System.currentTimeMillis())
+            .securityId(securityId)
             .quantity(new BigDecimal("100.00"))
             .limitPrice(new BigDecimal("50.25"))
             .orderTimestamp(OffsetDateTime.now())

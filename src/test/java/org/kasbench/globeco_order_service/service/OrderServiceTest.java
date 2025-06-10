@@ -191,10 +191,8 @@ public class OrderServiceTest {
         
         // Mock repository responses to return false for non-existent entities
         when(blotterRepository.existsById(999)).thenReturn(false);
-        when(blotterRepository.existsById(3)).thenReturn(true);
-        when(statusRepository.existsById(1)).thenReturn(true);
-        when(statusRepository.existsById(888)).thenReturn(false); 
-        when(orderTypeRepository.existsById(2)).thenReturn(true);
+        when(blotterRepository.existsById(3)).thenReturn(true); // Allow second order to pass blotter check
+        when(statusRepository.existsById(888)).thenReturn(false);
         
         // Execute batch processing
         OrderListResponseDTO result = orderService.processBatchOrders(orders);

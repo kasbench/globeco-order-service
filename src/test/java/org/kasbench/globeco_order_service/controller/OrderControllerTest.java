@@ -152,7 +152,7 @@ public class OrderControllerTest {
         // Setup test data
         List<OrderPostDTO> orders = Arrays.asList(orderPostDTO, orderPostDTO);
         
-        OrderListResponseDTO failureResponse = OrderListResponseDTO.failure("All orders failed", 2);
+        OrderListResponseDTO failureResponse = OrderListResponseDTO.failure("All orders failed", 2, new ArrayList<>());
         
         // Mock service response
         Mockito.when(orderService.processBatchOrders(any(List.class))).thenReturn(failureResponse);

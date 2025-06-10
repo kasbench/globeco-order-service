@@ -51,14 +51,14 @@ public class OrderListResponseDTO {
     }
     
     // Factory method for complete failure scenario
-    public static OrderListResponseDTO failure(String errorMessage, int totalReceived) {
+    public static OrderListResponseDTO failure(String errorMessage, int totalReceived, List<OrderPostResponseDTO> orderResults) {
         return OrderListResponseDTO.builder()
                 .status("FAILURE")
                 .message(errorMessage)
                 .totalReceived(totalReceived)
                 .successful(0)
                 .failed(totalReceived)
-                .orders(new ArrayList<>())
+                .orders(orderResults != null ? orderResults : new ArrayList<>())
                 .build();
     }
     
@@ -102,7 +102,7 @@ public class OrderListResponseDTO {
         if (successful == orderResults.size()) {
             return success(orderResults);
         } else if (failed == orderResults.size()) {
-            return failure("All orders failed to process", orderResults.size());
+            return failure("All orders failed to process", orderResults.size(), orderResults);
         } else {
             return partial(orderResults);
         }
