@@ -7,6 +7,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import org.kasbench.globeco_order_service.dto.OrderWithDetailsDTO;
 import org.kasbench.globeco_order_service.dto.OrderPostDTO;
+import org.kasbench.globeco_order_service.dto.OrderListResponseDTO;
+import org.kasbench.globeco_order_service.dto.OrderPostResponseDTO;
 import org.kasbench.globeco_order_service.entity.*;
 import org.kasbench.globeco_order_service.repository.*;
 import org.kasbench.globeco_order_service.service.OrderService;
@@ -14,6 +16,7 @@ import org.kasbench.globeco_order_service.service.OrderService;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -36,6 +39,183 @@ public class OrderDtoIntegrationTest {
     
     @Autowired
     private OrderRepository orderRepository;
+
+    // =============== BATCH PROCESSING INTEGRATION TESTS ===============
+
+    @Test
+    public void testBatchOrderProcessing_AllSuccess() {
+        setupTestData();
+        
+        // Create a batch of valid orders
+        List<OrderPostDTO> orders = createValidOrderBatch(3);
+        
+        // Process batch
+        OrderListResponseDTO result = orderService.processBatchOrders(orders);
+        
+        // Verify batch results
+        assertNotNull(result);
+        assertEquals("SUCCESS", result.getStatus());
+        assertEquals(3, result.getTotalReceived());
+        assertEquals(3, result.getSuccessful());
+        assertEquals(0, result.getFailed());
+        assertEquals(3, result.getOrders().size());
+        assertTrue(result.getMessage().contains("All 3 orders processed successfully"));
+        
+        // Verify each individual order result
+        for (int i = 0; i < 3; i++) {
+            OrderPostResponseDTO orderResponse = result.getOrders().get(i);
+            assertEquals("SUCCESS", orderResponse.getStatus());
+            assertEquals(i, orderResponse.getRequestIndex());
+            assertNotNull(orderResponse.getOrder());
+            assertNotNull(orderResponse.getOrderId());
+            verifyOrderDtoIsProperlyPopulated(orderResponse.getOrder());
+        }
+        
+        // Verify orders were actually saved to database
+        List<OrderWithDetailsDTO> allOrders = orderService.getAll();
+        assertTrue(allOrders.size() >= 3, "Should have at least 3 orders in database");
+        
+        System.out.println("✅ Batch processing (all success) integration test passed!");
+    }
+    
+    @Test
+    public void testBatchOrderProcessing_PartialSuccess() {
+        setupTestData();
+        
+        // Create batch with mix of valid and invalid orders
+        List<OrderPostDTO> orders = new ArrayList<>();
+        orders.add(createValidOrderPostDTO()); // Valid
+        orders.add(createValidOrderPostDTO()); // Valid
+        orders.add(createInvalidOrderPostDTO()); // Invalid - missing required field
+        
+        // Process batch
+        OrderListResponseDTO result = orderService.processBatchOrders(orders);
+        
+        // Verify batch results
+        assertNotNull(result);
+        assertEquals("PARTIAL", result.getStatus());
+        assertEquals(3, result.getTotalReceived());
+        assertEquals(2, result.getSuccessful());
+        assertEquals(1, result.getFailed());
+        assertEquals(3, result.getOrders().size());
+        assertTrue(result.getMessage().contains("2 of 3 orders processed successfully"));
+        
+        // Verify individual results
+        assertEquals("SUCCESS", result.getOrders().get(0).getStatus());
+        assertEquals("SUCCESS", result.getOrders().get(1).getStatus());
+        assertEquals("FAILURE", result.getOrders().get(2).getStatus());
+        assertTrue(result.getOrders().get(2).getMessage().contains("Portfolio ID is required"));
+        
+        // Verify only successful orders were saved
+        long orderCountAfter = orderRepository.count();
+        assertTrue(orderCountAfter >= 2, "Should have saved at least 2 successful orders");
+        
+        System.out.println("✅ Batch processing (partial success) integration test passed!");
+    }
+    
+    @Test
+    public void testBatchOrderProcessing_AllFailure() {
+        setupTestData();
+        
+        // Create batch with all invalid orders
+        List<OrderPostDTO> orders = new ArrayList<>();
+        orders.add(createOrderWithInvalidBlotter()); // Invalid blotter ID
+        orders.add(createOrderWithInvalidStatus()); // Invalid status ID
+        orders.add(createOrderWithNegativeQuantity()); // Invalid quantity
+        
+        // Process batch
+        OrderListResponseDTO result = orderService.processBatchOrders(orders);
+        
+        // Verify batch results
+        assertNotNull(result);
+        assertEquals("FAILURE", result.getStatus());
+        assertEquals(3, result.getTotalReceived());
+        assertEquals(0, result.getSuccessful());
+        assertEquals(3, result.getFailed());
+        assertEquals(3, result.getOrders().size());
+        
+        // Verify all orders failed with appropriate error messages
+        assertEquals("FAILURE", result.getOrders().get(0).getStatus());
+        assertEquals("FAILURE", result.getOrders().get(1).getStatus());
+        assertEquals("FAILURE", result.getOrders().get(2).getStatus());
+        
+        System.out.println("✅ Batch processing (all failure) integration test passed!");
+    }
+    
+    @Test
+    public void testBatchOrderProcessing_EmptyBatch() {
+        List<OrderPostDTO> orders = new ArrayList<>();
+        
+        // Process empty batch
+        OrderListResponseDTO result = orderService.processBatchOrders(orders);
+        
+        // Verify results
+        assertNotNull(result);
+        assertEquals("FAILURE", result.getStatus());
+        assertEquals(0, result.getTotalReceived());
+        assertEquals(0, result.getSuccessful());
+        assertEquals(0, result.getFailed());
+        assertTrue(result.getMessage().contains("No orders provided for processing"));
+        
+        System.out.println("✅ Empty batch processing integration test passed!");
+    }
+    
+    @Test
+    public void testBatchOrderProcessing_LargeBatch() {
+        setupTestData();
+        
+        // Create a large batch (but within limits)
+        List<OrderPostDTO> orders = createValidOrderBatch(50);
+        
+        // Process batch
+        OrderListResponseDTO result = orderService.processBatchOrders(orders);
+        
+        // Verify batch results
+        assertNotNull(result);
+        assertEquals("SUCCESS", result.getStatus());
+        assertEquals(50, result.getTotalReceived());
+        assertEquals(50, result.getSuccessful());
+        assertEquals(0, result.getFailed());
+        assertEquals(50, result.getOrders().size());
+        
+        // Verify all orders have proper DTOs and were saved
+        for (OrderPostResponseDTO orderResponse : result.getOrders()) {
+            assertEquals("SUCCESS", orderResponse.getStatus());
+            assertNotNull(orderResponse.getOrder());
+            verifyOrderDtoIsProperlyPopulated(orderResponse.getOrder());
+        }
+        
+        System.out.println("✅ Large batch processing integration test passed!");
+    }
+    
+    @Test
+    public void testBatchOrderProcessing_DatabaseTransaction() {
+        setupTestData();
+        long initialOrderCount = orderRepository.count();
+        
+        // Create batch with valid and invalid orders to test transaction behavior
+        List<OrderPostDTO> orders = new ArrayList<>();
+        orders.add(createValidOrderPostDTO());
+        orders.add(createValidOrderPostDTO());
+        orders.add(createInvalidOrderPostDTO()); // This should fail but not rollback successful ones
+        
+        // Process batch
+        OrderListResponseDTO result = orderService.processBatchOrders(orders);
+        
+        // Verify partial success (non-atomic behavior)
+        assertEquals("PARTIAL", result.getStatus());
+        assertEquals(2, result.getSuccessful());
+        assertEquals(1, result.getFailed());
+        
+        // Verify successful orders were committed to database
+        long finalOrderCount = orderRepository.count();
+        assertEquals(initialOrderCount + 2, finalOrderCount, 
+                "Successful orders should be persisted even when some orders fail");
+        
+        System.out.println("✅ Batch transaction behavior integration test passed!");
+    }
+
+    // =============== EXISTING TESTS (updated for compatibility) ===============
 
     @Test
     public void testOrderServiceReturnsProperDtoFormat() {
@@ -98,6 +278,96 @@ public class OrderDtoIntegrationTest {
         assertEquals(orderType.getAbbreviation(), createdOrder.getOrderType().getAbbreviation());
         
         System.out.println("✅ Service layer creates properly populated OrderWithDetailsDTO - fix verified!");
+    }
+
+    // =============== HELPER METHODS ===============
+    
+    private List<OrderPostDTO> createValidOrderBatch(int size) {
+        List<OrderPostDTO> orders = new ArrayList<>();
+        for (int i = 0; i < size; i++) {
+            orders.add(createValidOrderPostDTO());
+        }
+        return orders;
+    }
+    
+    private OrderPostDTO createValidOrderPostDTO() {
+        Blotter blotter = blotterRepository.findAll().get(0);
+        Status status = statusRepository.findAll().get(0);
+        OrderType orderType = orderTypeRepository.findAll().get(0);
+        
+        return OrderPostDTO.builder()
+            .blotterId(blotter.getId())
+            .statusId(status.getId())
+            .portfolioId("BATCH_PORTFOLIO_" + System.currentTimeMillis())
+            .orderTypeId(orderType.getId())
+            .securityId("BATCH_SECURITY_" + System.currentTimeMillis())
+            .quantity(new BigDecimal("100.00"))
+            .limitPrice(new BigDecimal("50.25"))
+            .orderTimestamp(OffsetDateTime.now())
+            .version(1)
+            .build();
+    }
+    
+    private OrderPostDTO createInvalidOrderPostDTO() {
+        Blotter blotter = blotterRepository.findAll().get(0);
+        Status status = statusRepository.findAll().get(0);
+        OrderType orderType = orderTypeRepository.findAll().get(0);
+        
+        return OrderPostDTO.builder()
+            .blotterId(blotter.getId())
+            .statusId(status.getId())
+            // Missing portfolioId - validation should fail
+            .orderTypeId(orderType.getId())
+            .securityId("INVALID_SECURITY")
+            .quantity(new BigDecimal("100.00"))
+            .limitPrice(new BigDecimal("50.25"))
+            .build();
+    }
+    
+    private OrderPostDTO createOrderWithInvalidBlotter() {
+        Status status = statusRepository.findAll().get(0);
+        OrderType orderType = orderTypeRepository.findAll().get(0);
+        
+        return OrderPostDTO.builder()
+            .blotterId(99999) // Non-existent blotter ID
+            .statusId(status.getId())
+            .portfolioId("VALID_PORTFOLIO")
+            .orderTypeId(orderType.getId())
+            .securityId("VALID_SECURITY")
+            .quantity(new BigDecimal("100.00"))
+            .limitPrice(new BigDecimal("50.25"))
+            .build();
+    }
+    
+    private OrderPostDTO createOrderWithInvalidStatus() {
+        Blotter blotter = blotterRepository.findAll().get(0);
+        OrderType orderType = orderTypeRepository.findAll().get(0);
+        
+        return OrderPostDTO.builder()
+            .blotterId(blotter.getId())
+            .statusId(88888) // Non-existent status ID
+            .portfolioId("VALID_PORTFOLIO")
+            .orderTypeId(orderType.getId())
+            .securityId("VALID_SECURITY")
+            .quantity(new BigDecimal("100.00"))
+            .limitPrice(new BigDecimal("50.25"))
+            .build();
+    }
+    
+    private OrderPostDTO createOrderWithNegativeQuantity() {
+        Blotter blotter = blotterRepository.findAll().get(0);
+        Status status = statusRepository.findAll().get(0);
+        OrderType orderType = orderTypeRepository.findAll().get(0);
+        
+        return OrderPostDTO.builder()
+            .blotterId(blotter.getId())
+            .statusId(status.getId())
+            .portfolioId("VALID_PORTFOLIO")
+            .orderTypeId(orderType.getId())
+            .securityId("VALID_SECURITY")
+            .quantity(new BigDecimal("-100.00")) // Invalid negative quantity
+            .limitPrice(new BigDecimal("50.25"))
+            .build();
     }
     
     private void verifyOrderDtoIsProperlyPopulated(OrderWithDetailsDTO order) {
