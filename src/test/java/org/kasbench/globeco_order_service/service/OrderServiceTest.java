@@ -547,4 +547,103 @@ public class OrderServiceTest {
         boolean result = orderService.delete(10, 1);
         assertFalse(result);
     }
+
+    @Test
+    void testProcessBatchOrders_NullLimitPrice() {
+        // Test that null limit prices are allowed (market orders)
+        OrderPostDTO marketOrder = OrderPostDTO.builder()
+                .blotterId(3)
+                .statusId(1)
+                .portfolioId("PORT12345678901234567890")
+                .orderTypeId(2)
+                .securityId("SEC12345678901234567890")
+                .quantity(new BigDecimal("100.00"))
+                .limitPrice(null) // This should be allowed
+                .orderTimestamp(now)
+                .version(1)
+                .build();
+
+        List<OrderPostDTO> orders = Arrays.asList(marketOrder);
+
+        // Mock repository responses to return valid entities
+        when(blotterRepository.existsById(3)).thenReturn(true);
+        when(statusRepository.existsById(1)).thenReturn(true);
+        when(orderTypeRepository.existsById(2)).thenReturn(true);
+        when(blotterRepository.findById(3)).thenReturn(Optional.of(blotter));
+        when(statusRepository.findById(1)).thenReturn(Optional.of(status));
+        when(orderTypeRepository.findById(2)).thenReturn(Optional.of(orderType));
+        when(orderRepository.save(any(Order.class))).thenReturn(order);
+
+        // Execute the batch processing
+        OrderListResponseDTO result = orderService.processBatchOrders(orders);
+
+        // Verify successful processing
+        assertEquals("SUCCESS", result.getStatus());
+        assertEquals(1, result.getTotalReceived());
+        assertEquals(1, result.getSuccessful());
+        assertEquals(0, result.getFailed());
+        assertEquals(1, result.getOrders().size());
+        assertEquals("SUCCESS", result.getOrders().get(0).getStatus());
+        assertEquals("Order created successfully", result.getOrders().get(0).getMessage());
+    }
+
+    @Test
+    void testProcessBatchOrders_NegativeLimitPrice() {
+        // Test that negative limit prices are rejected
+        OrderPostDTO invalidOrder = OrderPostDTO.builder()
+                .blotterId(3)
+                .statusId(1)
+                .portfolioId("PORT12345678901234567890")
+                .orderTypeId(2)
+                .securityId("SEC12345678901234567890")
+                .quantity(new BigDecimal("100.00"))
+                .limitPrice(new BigDecimal("-50.25")) // This should be rejected
+                .orderTimestamp(now)
+                .version(1)
+                .build();
+
+        List<OrderPostDTO> orders = Arrays.asList(invalidOrder);
+
+        // Execute the batch processing
+        OrderListResponseDTO result = orderService.processBatchOrders(orders);
+
+        // Verify validation failure
+        assertEquals("FAILURE", result.getStatus());
+        assertEquals(1, result.getTotalReceived());
+        assertEquals(0, result.getSuccessful());
+        assertEquals(1, result.getFailed());
+        assertEquals(1, result.getOrders().size());
+        assertEquals("FAILURE", result.getOrders().get(0).getStatus());
+        assertTrue(result.getOrders().get(0).getMessage().contains("Limit price must be positive when provided"));
+    }
+
+    @Test
+    void testProcessBatchOrders_ZeroLimitPrice() {
+        // Test that zero limit prices are rejected
+        OrderPostDTO invalidOrder = OrderPostDTO.builder()
+                .blotterId(3)
+                .statusId(1)
+                .portfolioId("PORT12345678901234567890")
+                .orderTypeId(2)
+                .securityId("SEC12345678901234567890")
+                .quantity(new BigDecimal("100.00"))
+                .limitPrice(new BigDecimal("0.00")) // This should be rejected
+                .orderTimestamp(now)
+                .version(1)
+                .build();
+
+        List<OrderPostDTO> orders = Arrays.asList(invalidOrder);
+
+        // Execute the batch processing
+        OrderListResponseDTO result = orderService.processBatchOrders(orders);
+
+        // Verify validation failure
+        assertEquals("FAILURE", result.getStatus());
+        assertEquals(1, result.getTotalReceived());
+        assertEquals(0, result.getSuccessful());
+        assertEquals(1, result.getFailed());
+        assertEquals(1, result.getOrders().size());
+        assertEquals("FAILURE", result.getOrders().get(0).getStatus());
+        assertTrue(result.getOrders().get(0).getMessage().contains("Limit price must be positive when provided"));
+    }
 } 

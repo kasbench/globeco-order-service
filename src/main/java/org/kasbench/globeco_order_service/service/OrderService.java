@@ -175,20 +175,50 @@ public class OrderService {
     }
 
     public OrderWithDetailsDTO create(OrderPostDTO dto) {
-        Order order = new Order();
-        // Basic field copying for test compatibility
-        order.setBlotter(blotterRepository.findById(dto.getBlotterId()).orElse(null));
-        order.setStatus(statusRepository.findById(dto.getStatusId()).orElse(null));
-        order.setPortfolioId(dto.getPortfolioId());
-        order.setOrderType(orderTypeRepository.findById(dto.getOrderTypeId()).orElse(null));
-        order.setSecurityId(dto.getSecurityId());
-        order.setQuantity(dto.getQuantity());
-        order.setLimitPrice(dto.getLimitPrice());
-        order.setTradeOrderId(dto.getTradeOrderId());
-        order.setOrderTimestamp(dto.getOrderTimestamp());
-        order.setVersion(dto.getVersion());
-        Order saved = orderRepository.save(order);
-        return toDto(saved);
+        try {
+            Order order = new Order();
+            
+            // Fetch and validate blotter
+            Blotter blotter = blotterRepository.findById(dto.getBlotterId()).orElse(null);
+            if (blotter == null) {
+                logger.info("Failed to create order: Blotter with ID {} not found", dto.getBlotterId());
+                return null;
+            }
+            order.setBlotter(blotter);
+            
+            // Fetch and validate status
+            Status status = statusRepository.findById(dto.getStatusId()).orElse(null);
+            if (status == null) {
+                logger.info("Failed to create order: Status with ID {} not found", dto.getStatusId());
+                return null;
+            }
+            order.setStatus(status);
+            
+            // Fetch and validate order type
+            OrderType orderType = orderTypeRepository.findById(dto.getOrderTypeId()).orElse(null);
+            if (orderType == null) {
+                logger.info("Failed to create order: OrderType with ID {} not found", dto.getOrderTypeId());
+                return null;
+            }
+            order.setOrderType(orderType);
+            
+            // Set remaining fields
+            order.setPortfolioId(dto.getPortfolioId());
+            order.setSecurityId(dto.getSecurityId());
+            order.setQuantity(dto.getQuantity());
+            order.setLimitPrice(dto.getLimitPrice());
+            order.setTradeOrderId(dto.getTradeOrderId());
+            order.setOrderTimestamp(dto.getOrderTimestamp());
+            order.setVersion(dto.getVersion());
+            
+            Order saved = orderRepository.save(order);
+            logger.debug("Order created successfully with ID {}", saved.getId());
+            return toDto(saved);
+            
+        } catch (Exception e) {
+            logger.info("Exception during order creation: {}", e.getMessage(), e);
+            return null;
+        }
     }
 
     public Optional<OrderWithDetailsDTO> update(Integer id, OrderDTO dto) {
@@ -264,6 +294,12 @@ public class OrderService {
         int successCount = 0;
         int failureCount = 0;
         
+        // Track failure patterns for better diagnostics
+        int validationFailures = 0;
+        int referenceFailures = 0;
+        int creationFailures = 0;
+        int exceptionFailures = 0;
+        
         // Process each order individually
         for (int i = 0; i < orders.size(); i++) {
             OrderPostDTO orderDto = orders.get(i);
@@ -274,15 +310,49 @@ public class OrderService {
                 successCount++;
             } else {
                 failureCount++;
+                
+                // Categorize failure types for reporting
+                String errorMessage = result.getMessage();
+                if (errorMessage != null) {
+                    if (errorMessage.contains("is required") || 
+                        errorMessage.contains("must be positive") || 
+                        errorMessage.contains("data is required")) {
+                        validationFailures++;
+                    } else if (errorMessage.contains("not found")) {
+                        referenceFailures++;
+                    } else if (errorMessage.contains("Failed to create order")) {
+                        creationFailures++;
+                    } else if (errorMessage.contains("Internal error") || 
+                               errorMessage.contains("Unexpected error")) {
+                        exceptionFailures++;
+                    }
+                }
             }
         }
         
         long endTime = System.currentTimeMillis();
         long processingTime = endTime - startTime;
         
-        // Log batch processing metrics
+        // Log batch processing metrics with failure breakdown
         logger.info("Batch processing completed: {} total, {} successful, {} failed, {}ms processing time",
                 orders.size(), successCount, failureCount, processingTime);
+        
+        // Log failure breakdown if there were failures
+        if (failureCount > 0) {
+            logger.info("Failure breakdown: {} validation errors, {} reference errors, {} creation errors, {} exceptions",
+                    validationFailures, referenceFailures, creationFailures, exceptionFailures);
+            
+            // Log first few failure examples for diagnostics
+            int exampleCount = Math.min(3, failureCount);
+            logger.info("Sample failure messages from first {} failed orders:", exampleCount);
+            for (int i = 0; i < orderResults.size() && exampleCount > 0; i++) {
+                OrderPostResponseDTO result = orderResults.get(i);
+                if (!result.isSuccess()) {
+                    logger.info("  Index {}: {}", result.getRequestIndex(), result.getMessage());
+                    exampleCount--;
+                }
+            }
+        }
         
         // Return appropriate response based on results
         return OrderListResponseDTO.fromResults(orderResults);
@@ -301,21 +371,21 @@ public class OrderService {
             // Validate required fields
             String validationError = validateOrderPostDTO(orderDto);
             if (validationError != null) {
-                logger.debug("Order validation failed at index {}: {}", requestIndex, validationError);
+                logger.info("Order validation failed at index {}: {}", requestIndex, validationError);
                 return OrderPostResponseDTO.failure(validationError, requestIndex);
             }
             
             // Validate foreign key references exist
             String referenceError = validateOrderReferences(orderDto);
             if (referenceError != null) {
-                logger.debug("Order reference validation failed at index {}: {}", requestIndex, referenceError);
+                logger.info("Order reference validation failed at index {}: {}", requestIndex, referenceError);
                 return OrderPostResponseDTO.failure(referenceError, requestIndex);
             }
             
             // Create the order using existing logic
             OrderWithDetailsDTO createdOrder = create(orderDto);
             if (createdOrder == null) {
-                logger.warn("Order creation returned null at index {}", requestIndex);
+                logger.info("Order creation returned null at index {}: Failed to create order - unknown error", requestIndex);
                 return OrderPostResponseDTO.failure("Failed to create order: unknown error", requestIndex);
             }
             
@@ -323,7 +393,7 @@ public class OrderService {
             return OrderPostResponseDTO.success(createdOrder, createdOrder.getId().longValue(), requestIndex);
             
         } catch (Exception e) {
-            logger.error("Unexpected error processing order at index {}: {}", requestIndex, e.getMessage(), e);
+            logger.info("Unexpected error processing order at index {}: {}", requestIndex, e.getMessage(), e);
             return OrderPostResponseDTO.failure(
                     "Internal error processing order: " + e.getMessage(), requestIndex);
         }
@@ -364,8 +434,8 @@ public class OrderService {
             return "Quantity must be positive";
         }
         
-        if (dto.getLimitPrice() == null || dto.getLimitPrice().signum() <= 0) {
-            return "Limit price must be positive";
+        if (dto.getLimitPrice() != null && dto.getLimitPrice().signum() <= 0) {
+            return "Limit price must be positive when provided";
         }
         
         return null; // Valid
