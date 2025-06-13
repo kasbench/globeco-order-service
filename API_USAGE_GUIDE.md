@@ -1,62 +1,189 @@
-# **GlobeCo Order Service - Batch API Usage Guide**
-## **Complete Guide for LLM Integration**
+# **GlobeCo Order Service - Complete API Usage Guide**
+## **Comprehensive Guide for LLM Integration**
 
 ### **Overview**
-This document provides comprehensive instructions for interacting with the GlobeCo Order Service batch order processing API. The API allows creating up to 1000 orders in a single request with detailed success/failure reporting for each order.
+This document provides complete instructions for interacting with the GlobeCo Order Service API. The service provides endpoints for managing orders, statuses, order types, and blotters with comprehensive CRUD operations and batch processing capabilities.
+
+**Base URL:** `http://localhost:8081/api/v1`
+
+**Key Features:**
+- **Batch Order Processing**: Create up to 1000 orders in a single request
+- **Non-atomic Processing**: Individual failures don't affect other operations
+- **Optimistic Locking**: Version-based concurrency control
+- **Comprehensive Error Handling**: Detailed validation and error messages
+- **RESTful Design**: Standard HTTP methods and status codes
 
 ---
 
-## **🎯 API Endpoint Details**
+## **🎯 Quick Reference - All Endpoints**
 
-### **Base Information**
-- **URL:** `POST /api/v1/orders`
-- **Content-Type:** `application/json`
-- **Max Batch Size:** 1000 orders per request
-- **Processing Model:** Non-atomic (individual failures don't affect other orders)
+### **Orders**
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/orders` | List all orders |
+| GET | `/order/{id}` | Get order by ID |
+| POST | `/orders` | Create orders (batch) |
+| PUT | `/order/{id}` | Update order |
+| DELETE | `/order/{id}?version={version}` | Delete order |
+| POST | `/orders/{id}/submit` | Submit order to trade service |
 
-### **HTTP Status Codes**
-| Code | Meaning | When Used |
-|------|---------|-----------|
-| `200` | All orders processed successfully | 100% success rate |
-| `207` | Partial success | Some orders succeeded, others failed |
-| `400` | Request validation failed | Invalid request format or data |
-| `413` | Payload too large | More than 1000 orders in request |
-| `500` | Server error | Unexpected internal error |
+### **Statuses**
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/statuses` | List all statuses |
+| GET | `/status/{id}` | Get status by ID |
+| POST | `/statuses` | Create status |
+| PUT | `/status/{id}` | Update status |
+| DELETE | `/status/{id}?version={version}` | Delete status |
+
+### **Order Types**
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/orderTypes` | List all order types |
+| GET | `/orderTypes/{id}` | Get order type by ID |
+| POST | `/orderTypes` | Create order type |
+| PUT | `/orderType/{id}` | Update order type |
+| DELETE | `/orderType/{id}?version={version}` | Delete order type |
+
+### **Blotters**
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/blotters` | List all blotters |
+| GET | `/blotter/{id}` | Get blotter by ID |
+| POST | `/blotters` | Create blotter |
+| PUT | `/blotter/{id}` | Update blotter |
+| DELETE | `/blotter/{id}?version={version}` | Delete blotter |
 
 ---
 
-## **📝 Request Format**
+## **📊 Data Transfer Objects (DTOs)**
 
-### **Request Structure**
+### **OrderPostDTO** (Create Orders)
+```json
+{
+  "blotterId": 1,                                    // Required: Integer, nullable
+  "statusId": 1,                                     // Required: Integer
+  "portfolioId": "PORT123456789012345678",           // Required: String (max 24 chars)
+  "orderTypeId": 2,                                  // Required: Integer
+  "securityId": "SEC123456789012345678901",          // Required: String
+  "quantity": 100.00000000,                          // Required: Decimal (positive)
+  "limitPrice": 50.25000000,                         // Optional: Decimal (positive if provided)
+  "tradeOrderId": 12345,                             // Optional: Integer
+  "orderTimestamp": "2024-06-01T12:00:00Z",          // Required: ISO 8601 datetime
+  "version": 1                                       // Required: Integer
+}
+```
+
+### **OrderWithDetailsDTO** (Response)
+```json
+{
+  "id": 101,
+  "blotter": {
+    "id": 1,
+    "name": "Default Blotter",
+    "version": 1
+  },
+  "status": {
+    "id": 1,
+    "abbreviation": "NEW",
+    "description": "New Order",
+    "version": 1
+  },
+  "portfolioId": "PORT123456789012345678",
+  "orderType": {
+    "id": 2,
+    "abbreviation": "BUY",
+    "description": "Buy Order",
+    "version": 1
+  },
+  "securityId": "SEC123456789012345678901",
+  "quantity": 100.00000000,
+  "limitPrice": 50.25000000,
+  "tradeOrderId": 12345,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 1
+}
+```
+
+### **OrderListResponseDTO** (Batch Response)
+```json
+{
+  "status": "SUCCESS|PARTIAL|FAILURE",
+  "message": "Human-readable summary",
+  "totalReceived": 2,
+  "successful": 2,
+  "failed": 0,
+  "orders": [
+    {
+      "status": "SUCCESS|FAILURE",
+      "message": "Individual result message",
+      "orderDetails": "OrderWithDetailsDTO object or null",
+      "orderId": 101,
+      "requestIndex": 0
+    }
+  ]
+}
+```
+
+### **Status/OrderType/Blotter DTOs**
+```json
+// For GET and PUT
+{
+  "id": 1,
+  "abbreviation": "NEW",  // or "name" for Blotter
+  "description": "New Order",
+  "version": 1
+}
+
+// For POST (no id field)
+{
+  "abbreviation": "NEW",  // or "name" for Blotter
+  "description": "New Order",
+  "version": 1
+}
+```
+
+---
+
+## **🚀 Order Management API**
+
+### **1. List All Orders**
+```http
+GET /api/v1/orders
+```
+
+**Response (200):**
 ```json
 [
   {
-    "blotterId": integer (required),
-    "statusId": integer (required), 
-    "portfolioId": "string (required, max 24 chars)",
-    "orderTypeId": integer (required),
-    "securityId": "string (required)",
-    "quantity": number (required, decimal format),
-    "limitPrice": number (optional, decimal format),
-    "orderTimestamp": "string (required, ISO 8601 datetime)",
-    "version": integer (required)
+    "id": 101,
+    "blotter": { "id": 1, "name": "Default", "version": 1 },
+    "status": { "id": 1, "abbreviation": "NEW", "description": "New", "version": 1 },
+    "portfolioId": "PORT123456789012345678",
+    "orderType": { "id": 2, "abbreviation": "BUY", "description": "Buy", "version": 1 },
+    "securityId": "SEC123456789012345678901",
+    "quantity": 100.00000000,
+    "limitPrice": 50.25000000,
+    "tradeOrderId": null,
+    "orderTimestamp": "2024-06-01T12:00:00Z",
+    "version": 1
   }
 ]
 ```
 
-### **Field Constraints**
-- **blotterId:** Must exist in database, nullable
-- **statusId:** Must exist in database  
-- **portfolioId:** String, maximum 24 characters
-- **orderTypeId:** Must exist in database
-- **securityId:** String identifier
-- **quantity:** Positive decimal number
-- **limitPrice:** Optional positive decimal number
-- **orderTimestamp:** ISO 8601 format (e.g., "2024-06-01T12:00:00Z")
-- **version:** Integer version number
+### **2. Get Order by ID**
+```http
+GET /api/v1/order/101
+```
 
-### **Example Request (2 Orders)**
-```json
+**Response (200):** Same as OrderWithDetailsDTO above
+**Response (404):** Order not found
+
+### **3. Create Orders (Batch Processing)**
+```http
+POST /api/v1/orders
+Content-Type: application/json
+
 [
   {
     "blotterId": 1,
@@ -76,78 +203,18 @@ This document provides comprehensive instructions for interacting with the Globe
     "orderTypeId": 3,
     "securityId": "SEC987654321098765432109",
     "quantity": 200.00000000,
-    "limitPrice": 75.50000000,
+    "limitPrice": null,
     "orderTimestamp": "2024-06-01T12:01:00Z",
     "version": 1
   }
 ]
 ```
 
----
-
-## **📊 Response Format**
-
-### **Response Structure**
-```json
-{
-  "status": "SUCCESS|PARTIAL|FAILURE",
-  "message": "Human-readable description",
-  "totalReceived": integer,
-  "successful": integer,
-  "failed": integer,
-  "orders": [
-    {
-      "status": "SUCCESS|FAILURE",
-      "message": "Individual order result message",
-      "orderDetails": OrderWithDetailsDTO | null,
-      "orderId": integer | null,
-      "requestIndex": integer
-    }
-  ]
-}
-```
-
-### **OrderWithDetailsDTO Structure** (when successful)
-```json
-{
-  "id": integer,
-  "blotter": {
-    "id": integer,
-    "name": "string",
-    "version": integer
-  },
-  "status": {
-    "id": integer,
-    "abbreviation": "string",
-    "description": "string", 
-    "version": integer
-  },
-  "portfolioId": "string",
-  "orderType": {
-    "id": integer,
-    "abbreviation": "string",
-    "description": "string",
-    "version": integer
-  },
-  "securityId": "string",
-  "quantity": number,
-  "limitPrice": number | null,
-  "tradeOrderId": integer | null,
-  "orderTimestamp": "string",
-  "version": integer
-}
-```
-
----
-
-## **🎯 Response Scenarios**
-
-### **Scenario 1: Complete Success (HTTP 200)**
-**When:** All orders processed successfully
+**Success Response (200):**
 ```json
 {
   "status": "SUCCESS",
-  "message": "All orders processed successfully",
+  "message": "All 2 orders processed successfully",
   "totalReceived": 2,
   "successful": 2,
   "failed": 0,
@@ -157,24 +224,10 @@ This document provides comprehensive instructions for interacting with the Globe
       "message": "Order created successfully",
       "orderDetails": {
         "id": 101,
-        "blotter": {
-          "id": 1,
-          "name": "Default",
-          "version": 1
-        },
-        "status": {
-          "id": 1,
-          "abbreviation": "NEW",
-          "description": "New",
-          "version": 1
-        },
+        "blotter": { "id": 1, "name": "Default", "version": 1 },
+        "status": { "id": 1, "abbreviation": "NEW", "description": "New", "version": 1 },
         "portfolioId": "PORT123456789012345678",
-        "orderType": {
-          "id": 2,
-          "abbreviation": "BUY",
-          "description": "Buy",
-          "version": 1
-        },
+        "orderType": { "id": 2, "abbreviation": "BUY", "description": "Buy", "version": 1 },
         "securityId": "SEC123456789012345678901",
         "quantity": 100.00000000,
         "limitPrice": 50.25000000,
@@ -190,27 +243,13 @@ This document provides comprehensive instructions for interacting with the Globe
       "message": "Order created successfully",
       "orderDetails": {
         "id": 102,
-        "blotter": {
-          "id": 1,
-          "name": "Default",
-          "version": 1
-        },
-        "status": {
-          "id": 1,
-          "abbreviation": "NEW",
-          "description": "New",
-          "version": 1
-        },
+        "blotter": { "id": 1, "name": "Default", "version": 1 },
+        "status": { "id": 1, "abbreviation": "NEW", "description": "New", "version": 1 },
         "portfolioId": "PORT987654321098765432",
-        "orderType": {
-          "id": 3,
-          "abbreviation": "SELL",
-          "description": "Sell",
-          "version": 1
-        },
+        "orderType": { "id": 3, "abbreviation": "SELL", "description": "Sell", "version": 1 },
         "securityId": "SEC987654321098765432109",
         "quantity": 200.00000000,
-        "limitPrice": 75.50000000,
+        "limitPrice": null,
         "tradeOrderId": null,
         "orderTimestamp": "2024-06-01T12:01:00Z",
         "version": 1
@@ -222,12 +261,11 @@ This document provides comprehensive instructions for interacting with the Globe
 }
 ```
 
-### **Scenario 2: Partial Success (HTTP 207)**
-**When:** Some orders succeeded, others failed
+**Partial Success Response (207):**
 ```json
 {
   "status": "PARTIAL",
-  "message": "Some orders processed successfully, others failed",
+  "message": "1 of 2 orders processed successfully, 1 failed",
   "totalReceived": 2,
   "successful": 1,
   "failed": 1,
@@ -235,39 +273,13 @@ This document provides comprehensive instructions for interacting with the Globe
     {
       "status": "SUCCESS",
       "message": "Order created successfully",
-      "orderDetails": {
-        "id": 101,
-        "blotter": {
-          "id": 1,
-          "name": "Default",
-          "version": 1
-        },
-        "status": {
-          "id": 1,
-          "abbreviation": "NEW",
-          "description": "New",
-          "version": 1
-        },
-        "portfolioId": "PORT123456789012345678",
-        "orderType": {
-          "id": 2,
-          "abbreviation": "BUY",
-          "description": "Buy",
-          "version": 1
-        },
-        "securityId": "SEC123456789012345678901",
-        "quantity": 100.00000000,
-        "limitPrice": 50.25000000,
-        "tradeOrderId": null,
-        "orderTimestamp": "2024-06-01T12:00:00Z",
-        "version": 1
-      },
+      "orderDetails": { "..." },
       "orderId": 101,
       "requestIndex": 0
     },
     {
       "status": "FAILURE",
-      "message": "Blotter with ID 999 not found",
+      "message": "Portfolio ID is required",
       "orderDetails": null,
       "orderId": null,
       "requestIndex": 1
@@ -276,36 +288,7 @@ This document provides comprehensive instructions for interacting with the Globe
 }
 ```
 
-### **Scenario 3: Complete Failure (HTTP 207)**
-**When:** All orders failed during processing
-```json
-{
-  "status": "FAILURE", 
-  "message": "All orders failed to process",
-  "totalReceived": 2,
-  "successful": 0,
-  "failed": 2,
-  "orders": [
-    {
-      "status": "FAILURE",
-      "message": "Blotter with ID 999 not found",
-      "orderDetails": null,
-      "orderId": null,
-      "requestIndex": 0
-    },
-    {
-      "status": "FAILURE",
-      "message": "Status with ID 888 not found",
-      "orderDetails": null,
-      "orderId": null,
-      "requestIndex": 1
-    }
-  ]
-}
-```
-
-### **Scenario 4: Validation Error (HTTP 400)**
-**When:** Request format or validation failed
+**Validation Error Response (400):**
 ```json
 {
   "status": "FAILURE",
@@ -317,8 +300,7 @@ This document provides comprehensive instructions for interacting with the Globe
 }
 ```
 
-### **Scenario 5: Batch Size Exceeded (HTTP 413)**
-**When:** More than 1000 orders in request
+**Batch Size Error Response (413):**
 ```json
 {
   "status": "FAILURE",
@@ -330,246 +312,570 @@ This document provides comprehensive instructions for interacting with the Globe
 }
 ```
 
-### **Scenario 6: Server Error (HTTP 500)**
-**When:** Unexpected internal error
+### **4. Update Order**
+```http
+PUT /api/v1/order/101
+Content-Type: application/json
+
+{
+  "id": 101,
+  "blotterId": 1,
+  "statusId": 2,
+  "portfolioId": "PORT123456789012345678",
+  "orderTypeId": 2,
+  "securityId": "SEC123456789012345678901",
+  "quantity": 150.00000000,
+  "limitPrice": 55.00000000,
+  "tradeOrderId": null,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 2
+}
+```
+
+**Response (200):** Updated OrderWithDetailsDTO
+**Response (404):** Order not found
+
+### **5. Delete Order**
+```http
+DELETE /api/v1/order/101?version=1
+```
+
+**Response (204):** Order deleted successfully
+**Response (409):** Version mismatch conflict
+**Response (404):** Order not found
+
+### **6. Submit Order to Trade Service**
+```http
+POST /api/v1/orders/101/submit
+```
+
+**Success Response (200):**
 ```json
 {
-  "status": "FAILURE",
-  "message": "Internal server error processing batch request",
-  "totalReceived": 0,
-  "successful": 0,
-  "failed": 0,
-  "orders": []
+  "id": 101,
+  "blotterId": 1,
+  "statusId": 2,
+  "portfolioId": "PORT123456789012345678",
+  "orderTypeId": 2,
+  "securityId": "SEC123456789012345678901",
+  "quantity": 100.00000000,
+  "limitPrice": 50.25000000,
+  "tradeOrderId": 12345,
+  "orderTimestamp": "2024-06-01T12:00:00Z",
+  "version": 1
+}
+```
+
+**Failure Response (400):**
+```json
+{
+  "status": "not submitted"
 }
 ```
 
 ---
 
-## **🔧 Implementation Instructions for LLMs**
+## **📋 Reference Data APIs**
 
-### **1. Making the API Call**
-```javascript
-// Example using fetch API
-const response = await fetch('http://localhost:8080/api/v1/orders', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
+### **Status Management**
+
+#### **List All Statuses**
+```http
+GET /api/v1/statuses
+```
+
+**Response (200):**
+```json
+[
+  {
+    "id": 1,
+    "abbreviation": "NEW",
+    "description": "New Order",
+    "version": 1
   },
-  body: JSON.stringify([
+  {
+    "id": 2,
+    "abbreviation": "SENT",
+    "description": "Sent to Trade Service",
+    "version": 1
+  }
+]
+```
+
+#### **Get Status by ID**
+```http
+GET /api/v1/status/1
+```
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "abbreviation": "NEW",
+  "description": "New Order",
+  "version": 1
+}
+```
+
+#### **Create Status**
+```http
+POST /api/v1/statuses
+Content-Type: application/json
+
+{
+  "abbreviation": "HOLD",
+  "description": "Order on Hold",
+  "version": 1
+}
+```
+
+**Response (200):**
+```json
+{
+  "id": 3,
+  "abbreviation": "HOLD",
+  "description": "Order on Hold",
+  "version": 1
+}
+```
+
+#### **Update Status**
+```http
+PUT /api/v1/status/3
+Content-Type: application/json
+
+{
+  "id": 3,
+  "abbreviation": "HOLD",
+  "description": "Order on Hold (Updated)",
+  "version": 2
+}
+```
+
+#### **Delete Status**
+```http
+DELETE /api/v1/status/3?version=2
+```
+
+**Response (204):** Status deleted
+**Response (409):** Version mismatch
+
+### **Order Type Management**
+
+#### **List All Order Types**
+```http
+GET /api/v1/orderTypes
+```
+
+**Response (200):**
+```json
+[
+  {
+    "id": 1,
+    "abbreviation": "MKT",
+    "description": "Market Order",
+    "version": 1
+  },
+  {
+    "id": 2,
+    "abbreviation": "BUY",
+    "description": "Buy Order",
+    "version": 1
+  },
+  {
+    "id": 3,
+    "abbreviation": "SELL",
+    "description": "Sell Order",
+    "version": 1
+  }
+]
+```
+
+#### **Get Order Type by ID**
+```http
+GET /api/v1/orderTypes/2
+```
+
+#### **Create Order Type**
+```http
+POST /api/v1/orderTypes
+Content-Type: application/json
+
+{
+  "abbreviation": "LIMIT",
+  "description": "Limit Order",
+  "version": 1
+}
+```
+
+#### **Update Order Type**
+```http
+PUT /api/v1/orderType/4
+Content-Type: application/json
+
+{
+  "id": 4,
+  "abbreviation": "LIMIT",
+  "description": "Limit Order (Updated)",
+  "version": 2
+}
+```
+
+#### **Delete Order Type**
+```http
+DELETE /api/v1/orderType/4?version=2
+```
+
+### **Blotter Management**
+
+#### **List All Blotters**
+```http
+GET /api/v1/blotters
+```
+
+**Response (200):**
+```json
+[
+  {
+    "id": 1,
+    "name": "Default Blotter",
+    "version": 1
+  },
+  {
+    "id": 2,
+    "name": "High Frequency Trading",
+    "version": 1
+  }
+]
+```
+
+#### **Get Blotter by ID**
+```http
+GET /api/v1/blotter/1
+```
+
+#### **Create Blotter**
+```http
+POST /api/v1/blotters
+Content-Type: application/json
+
+{
+  "name": "Arbitrage Trading",
+  "version": 1
+}
+```
+
+#### **Update Blotter**
+```http
+PUT /api/v1/blotter/3
+Content-Type: application/json
+
+{
+  "id": 3,
+  "name": "Arbitrage Trading (Updated)",
+  "version": 2
+}
+```
+
+#### **Delete Blotter**
+```http
+DELETE /api/v1/blotter/3?version=2
+```
+
+---
+
+## **⚠️ Error Handling**
+
+### **HTTP Status Codes**
+| Code | Description | When Used |
+|------|-------------|-----------|
+| 200 | OK | Successful operation |
+| 204 | No Content | Successful deletion |
+| 207 | Multi-Status | Partial success in batch operations |
+| 400 | Bad Request | Validation errors, malformed requests |
+| 404 | Not Found | Resource not found |
+| 409 | Conflict | Version mismatch, constraint violations |
+| 413 | Payload Too Large | Batch size exceeds 1000 |
+| 500 | Internal Server Error | Unexpected server errors |
+
+### **Common Validation Errors**
+```json
+// Missing required fields
+{
+  "status": "FAILURE",
+  "message": "Portfolio ID is required",
+  "requestIndex": 0
+}
+
+// Invalid foreign key references
+{
+  "status": "FAILURE",
+  "message": "Blotter with ID 999 not found",
+  "requestIndex": 1
+}
+
+// Invalid values
+{
+  "status": "FAILURE",
+  "message": "Quantity must be positive",
+  "requestIndex": 2
+}
+
+// String length violations
+{
+  "status": "FAILURE",
+  "message": "Portfolio ID exceeds maximum length of 24 characters",
+  "requestIndex": 3
+}
+```
+
+---
+
+## **💡 Code Examples**
+
+### **JavaScript/Node.js**
+```javascript
+const axios = require('axios');
+
+// Create orders batch
+async function createOrders() {
+  const orders = [
+    {
+      blotterId: 1,
+      statusId: 1,
+      portfolioId: "PORT123456789012345678",
+      orderTypeId: 2,
+      securityId: "SEC123456789012345678901",
+      quantity: 100.0,
+      limitPrice: 50.25,
+      orderTimestamp: new Date().toISOString(),
+      version: 1
+    }
+  ];
+
+  try {
+    const response = await axios.post('http://localhost:8081/api/v1/orders', orders, {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    console.log('Orders created:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating orders:', error.response.data);
+    throw error;
+  }
+}
+
+// Get all orders
+async function getAllOrders() {
+  try {
+    const response = await axios.get('http://localhost:8081/api/v1/orders');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching orders:', error.response.data);
+    throw error;
+  }
+}
+```
+
+### **Python**
+```python
+import requests
+import json
+from datetime import datetime
+
+# Create orders batch
+def create_orders():
+    orders = [
+        {
+            "blotterId": 1,
+            "statusId": 1,
+            "portfolioId": "PORT123456789012345678",
+            "orderTypeId": 2,
+            "securityId": "SEC123456789012345678901",
+            "quantity": 100.0,
+            "limitPrice": 50.25,
+            "orderTimestamp": datetime.utcnow().isoformat() + "Z",
+            "version": 1
+        }
+    ]
+    
+    try:
+        response = requests.post(
+            'http://localhost:8081/api/v1/orders',
+            json=orders,
+            headers={'Content-Type': 'application/json'}
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error creating orders: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response: {e.response.text}")
+        raise
+
+# Get all statuses
+def get_all_statuses():
+    try:
+        response = requests.get('http://localhost:8081/api/v1/statuses')
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching statuses: {e}")
+        raise
+```
+
+### **cURL Examples**
+```bash
+# Create orders batch
+curl -X POST http://localhost:8081/api/v1/orders \
+  -H "Content-Type: application/json" \
+  -d '[
     {
       "blotterId": 1,
       "statusId": 1,
       "portfolioId": "PORT123456789012345678",
       "orderTypeId": 2,
       "securityId": "SEC123456789012345678901",
-      "quantity": 100.00000000,
-      "limitPrice": 50.25000000,
+      "quantity": 100.0,
+      "limitPrice": 50.25,
       "orderTimestamp": "2024-06-01T12:00:00Z",
       "version": 1
     }
-  ])
-});
+  ]'
 
-const result = await response.json();
-const httpStatus = response.status;
+# Get all orders
+curl -X GET http://localhost:8081/api/v1/orders
+
+# Get order by ID
+curl -X GET http://localhost:8081/api/v1/order/101
+
+# Delete order
+curl -X DELETE "http://localhost:8081/api/v1/order/101?version=1"
+
+# Create status
+curl -X POST http://localhost:8081/api/v1/statuses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "abbreviation": "HOLD",
+    "description": "Order on Hold",
+    "version": 1
+  }'
 ```
 
-### **2. Response Processing Logic**
+---
+
+## **📚 Best Practices**
+
+### **1. Batch Processing**
+- Use batch processing for high-volume order creation
+- Maximum 1000 orders per batch
+- Handle partial failures gracefully
+- Check individual order results in response
+
+### **2. Error Handling**
+- Always check HTTP status codes
+- Parse error messages for validation failures
+- Implement retry logic for 5xx errors
+- Log failed orders for manual review
+
+### **3. Version Management**
+- Always include version numbers for updates/deletes
+- Handle 409 conflicts by refetching current version
+- Use optimistic locking to prevent concurrent modification issues
+
+### **4. Data Validation**
+- Validate required fields before sending requests
+- Ensure foreign key references exist
+- Check string length constraints
+- Validate decimal precision for monetary values
+
+### **5. Performance**
+- Use batch operations when possible
+- Cache reference data (statuses, order types, blotters)
+- Implement pagination for large result sets
+- Use appropriate timeouts for HTTP requests
+
+---
+
+## **🔧 Common Integration Patterns**
+
+### **1. Order Creation Workflow**
 ```javascript
-function processOrderResponse(httpStatus, responseBody) {
-  switch (httpStatus) {
-    case 200:
-      console.log("✅ All orders successful");
-      console.log(`Created ${responseBody.successful} orders`);
-      responseBody.orders.forEach((order, index) => {
-        console.log(`Order ${index}: ID ${order.orderId} created successfully`);
-      });
-      break;
-      
-    case 207:
-      if (responseBody.status === "PARTIAL") {
-        console.log("⚠️ Partial success");
-        console.log(`${responseBody.successful} succeeded, ${responseBody.failed} failed`);
-      } else if (responseBody.status === "FAILURE") {
-        console.log("❌ All orders failed during processing");
-      }
-      
-      responseBody.orders.forEach((order, index) => {
-        if (order.status === "SUCCESS") {
-          console.log(`Order ${index}: ✅ Created with ID ${order.orderId}`);
-        } else {
-          console.log(`Order ${index}: ❌ Failed - ${order.message}`);
-        }
-      });
-      break;
-      
-    case 400:
-      console.log("❌ Request validation failed");
-      console.log(responseBody.message);
-      break;
-      
-    case 413:
-      console.log("❌ Too many orders in batch (max 1000)");
-      console.log(responseBody.message);
-      break;
-      
-    case 500:
-      console.log("❌ Server error");
-      console.log(responseBody.message);
-      break;
+async function createOrderWorkflow(orderData) {
+  // 1. Validate reference data exists
+  const [statuses, orderTypes, blotters] = await Promise.all([
+    getStatuses(),
+    getOrderTypes(),
+    getBlotters()
+  ]);
+  
+  // 2. Validate order data
+  validateOrder(orderData, { statuses, orderTypes, blotters });
+  
+  // 3. Create order batch
+  const response = await createOrders([orderData]);
+  
+  // 4. Handle results
+  if (response.status === 'SUCCESS') {
+    console.log('Order created successfully:', response.orders[0].orderId);
+    return response.orders[0];
+  } else {
+    console.error('Order creation failed:', response.orders[0].message);
+    throw new Error(response.orders[0].message);
   }
 }
 ```
 
-### **3. Request Validation Checklist**
-Before making a request, ensure:
-- ✅ Request is an array (even for single orders)
-- ✅ Array has 1-1000 items
-- ✅ Each order has all required fields
-- ✅ portfolioId is ≤ 24 characters
-- ✅ quantity and limitPrice are positive numbers
-- ✅ orderTimestamp is valid ISO 8601 format
-- ✅ All IDs (blotterId, statusId, orderTypeId) exist in the system
+### **2. Bulk Order Processing**
+```python
+def process_bulk_orders(order_list, batch_size=100):
+    results = []
+    
+    for i in range(0, len(order_list), batch_size):
+        batch = order_list[i:i + batch_size]
+        
+        try:
+            response = create_orders(batch)
+            results.append(response)
+            
+            # Log batch results
+            print(f"Batch {i//batch_size + 1}: {response['successful']} successful, {response['failed']} failed")
+            
+        except Exception as e:
+            print(f"Batch {i//batch_size + 1} failed: {e}")
+            results.append({"error": str(e), "batch_start": i})
+    
+    return results
+```
 
-### **4. Error Handling Strategy**
+### **3. Reference Data Caching**
 ```javascript
-async function createOrdersBatch(orders) {
-  try {
-    // Validate batch size
-    if (orders.length === 0 || orders.length > 1000) {
-      throw new Error(`Invalid batch size: ${orders.length}. Must be 1-1000 orders.`);
+class ReferenceDataCache {
+  constructor() {
+    this.cache = {};
+    this.ttl = 5 * 60 * 1000; // 5 minutes
+  }
+  
+  async getStatuses() {
+    return this.getCachedData('statuses', () => 
+      axios.get('/api/v1/statuses').then(r => r.data)
+    );
+  }
+  
+  async getCachedData(key, fetchFn) {
+    const cached = this.cache[key];
+    if (cached && Date.now() - cached.timestamp < this.ttl) {
+      return cached.data;
     }
     
-    const response = await fetch('/api/v1/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(orders)
-    });
-    
-    const result = await response.json();
-    
-    // Handle different outcomes
-    if (response.status === 200) {
-      return { success: true, allSucceeded: true, result };
-    } else if (response.status === 207) {
-      return { success: true, allSucceeded: false, result };
-    } else {
-      return { success: false, error: result.message, result };
-    }
-    
-  } catch (error) {
-    return { success: false, error: error.message };
+    const data = await fetchFn();
+    this.cache[key] = { data, timestamp: Date.now() };
+    return data;
   }
 }
 ```
 
 ---
 
-## **📋 Common Use Cases**
-
-### **Single Order Creation**
-```json
-[
-  {
-    "blotterId": 1,
-    "statusId": 1,
-    "portfolioId": "PORTFOLIO_001",
-    "orderTypeId": 2,
-    "securityId": "AAPL",
-    "quantity": 100.0,
-    "limitPrice": 150.0,
-    "orderTimestamp": "2024-06-01T12:00:00Z",
-    "version": 1
-  }
-]
-```
-
-### **Multiple Orders (Bulk Creation)**
-```json
-[
-  {
-    "blotterId": 1,
-    "statusId": 1,
-    "portfolioId": "PORTFOLIO_001",
-    "orderTypeId": 2,
-    "securityId": "AAPL",
-    "quantity": 100.0,
-    "limitPrice": 150.0,
-    "orderTimestamp": "2024-06-01T12:00:00Z",
-    "version": 1
-  },
-  {
-    "blotterId": 1,
-    "statusId": 1,
-    "portfolioId": "PORTFOLIO_002",
-    "orderTypeId": 3,
-    "securityId": "GOOGL",
-    "quantity": 50.0,
-    "limitPrice": 2500.0,
-    "orderTimestamp": "2024-06-01T12:01:00Z",
-    "version": 1
-  }
-]
-```
-
-### **Market Order (No Limit Price)**
-```json
-[
-  {
-    "blotterId": 1,
-    "statusId": 1,
-    "portfolioId": "PORTFOLIO_001",
-    "orderTypeId": 1,
-    "securityId": "MSFT",
-    "quantity": 75.0,
-    "limitPrice": null,
-    "orderTimestamp": "2024-06-01T12:00:00Z",
-    "version": 1
-  }
-]
-```
-
----
-
-## **⚠️ Important Notes for LLMs**
-
-1. **Always Use Arrays:** Even for single orders, wrap in array format
-2. **Check Response Status:** Use both HTTP status code AND response.status field
-3. **Handle Partial Success:** Process each order result individually 
-4. **Respect Limits:** Maximum 1000 orders per request
-5. **Validate Before Sending:** Check all required fields and constraints
-6. **Parse requestIndex:** Use this to match responses to original requests
-7. **Handle Nulls:** orderDetails and orderId will be null for failed orders
-8. **Use Proper Timestamps:** ISO 8601 format required
-9. **Monitor Response Size:** Large batches return large responses
-10. **Error Messages:** Always check the message field for human-readable errors
-
----
-
-## **🚀 Quick Start Example**
-
-```json
-// Simple working example
-POST /api/v1/orders
-Content-Type: application/json
-
-[
-  {
-    "blotterId": 1,
-    "statusId": 1,
-    "portfolioId": "TEST_PORTFOLIO_001",
-    "orderTypeId": 2,
-    "securityId": "TEST_SECURITY_001",
-    "quantity": 100.0,
-    "limitPrice": 50.0,
-    "orderTimestamp": "2024-06-01T12:00:00Z",
-    "version": 1
-  }
-]
-```
-
-This example will create a single order and return a success response if all validation passes and the referenced IDs exist in the database.
-
----
-
-**This guide provides everything needed to successfully interact with the GlobeCo Order Service batch processing API. Use the examples as templates and follow the validation guidelines for reliable integration.** 
+This comprehensive guide provides all the information needed to successfully integrate with the GlobeCo Order Service API. Use the examples and patterns as starting points for your specific implementation needs. 

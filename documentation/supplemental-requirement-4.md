@@ -1,0 +1,187 @@
+# Supplemental Requirement 4
+
+1. Modify OrderWithDetailsDTO
+    - Instead of returning `securityId`, return 
+    `"security": {"securityId": string, "ticker": string}`.  You can get the mapping of securityId to ticker from the Security Service API.  See ## Integrations below.  For performance, you can cache security records using Caffeine with a 5 minute TTL
+    - Instead of returning `portfolioId`, return
+    `"portfolio": {"portfolioId": string, "name": string}`.  You can get the mapping of portfolioId to name from the portfolio service.  See ## Integrations below.  For performance, you can cache portfolio records using Caffeine with a 5 minute TTL
+
+2. Implement paging for GET api/v1/orders.  Add `limit` and `offset` query parameters.  Limit must be between 1 and 1000, inclusive.
+
+3. Implement sorting for GET api/v1/orders.  Add `sort` as a query parameter.  This query parameter is a comma-separated list of fields.  Fields include: `id`, `security.ticker`, `portfolio.name`, `blotter.name`, `status.abbreviation`, `orderType.abbreviation`, `quantity`, and `orderTimestamp`. If the user supplies multiple comma-separated field names, sort in the order they appear.  The default sorting is ascending.  A minus sign preceding the field name indicates descending sorting for that field.  Default sort order is `id` (ascending). If the user supplies an invalid sort field, return a 400-level error with an appropriate message.
+
+   **Examples:**
+   - `GET /api/v1/orders?sort=security.ticker` (sort by ticker ascending)
+   - `GET /api/v1/orders?sort=-orderTimestamp,ticker` (sort by orderTimestamp descending, then ticker ascending)
+   - `GET /api/v1/orders?sort=portfolio.name,-quantity` (sort by portfolio name ascending, then quantity descending)
+
+4. Implement filtering for GET api/v1/orders using individual query parameters.  The allowable filter fields are: `security.ticker`, `portfolio.name`, `blotter.name`, `status.abbreviation`, `orderType.abbreviation`, and `orderTimestamp`. Each filter parameter supports multiple comma-separated values (OR logic). Multiple different filter parameters use AND logic.
+
+   **Examples:**
+   - `GET /api/v1/orders?security.ticker=IBM` (filter by ticker equals IBM)
+   - `GET /api/v1/orders?security.ticker=IBM,AAPL` (filter by ticker equals IBM OR AAPL)
+   - `GET /api/v1/orders?security.ticker=IBM&status.abbreviation=NEW` (filter by ticker equals IBM AND status equals NEW)
+   - `GET /api/v1/orders?portfolio.name=Growth Fund&status.abbreviation=NEW,SENT` (filter by portfolio name equals "Growth Fund" AND status equals NEW OR SENT)
+
+   **Complete Example:**
+   ```
+   GET /api/v1/orders?limit=50&offset=100&sort=security.ticker,-orderTimestamp&security.ticker=IBM&status.abbreviation=NEW,SENT
+   ```
+
+## Integrations
+
+| Service | Host | Port | OpenAPI Spec |
+| --- | --- | --- | --- |
+| Security Service | globeco-security-service | 8000 | [globeco-security-service-openapi.yaml](globeco-security-service-openapi.yaml)
+| Portfolio Service | globeco-portfolio-service | 8001 | [globeco-portfolio-service-openapi.yaml](globeco-portfolio-service-openapi.yaml)
+
+---
+
+## Execution Plan
+
+### Phase 1: Service Integrations & Caching
+- [ ] **1.1** Create `SecurityServiceClient` class
+  - [ ] Implement `getSecurityBySecurityId(String securityId)` method
+  - [ ] Add proper error handling and timeouts
+  - [ ] Add logging for service calls
+- [ ] **1.2** Create `PortfolioServiceClient` class  
+  - [ ] Implement `getPortfolioByPortfolioId(String portfolioId)` method
+  - [ ] Add proper error handling and timeouts
+  - [ ] Add logging for service calls
+- [ ] **1.3** Add Caffeine caching dependency
+  - [ ] Add `com.github.ben-manes.caffeine:caffeine:3.1.8` to build.gradle
+  - [ ] Configure Caffeine cache manager in Spring configuration
+- [ ] **1.4** Implement Caffeine caching for Security data
+  - [ ] Create `SecurityCacheService` with Caffeine cache (5-minute TTL)
+  - [ ] Configure cache size and eviction policies
+  - [ ] Add cache hit/miss metrics using Caffeine stats
+  - [ ] Handle cache refresh and async loading
+- [ ] **1.5** Implement Caffeine caching for Portfolio data
+  - [ ] Create `PortfolioCacheService` with Caffeine cache (5-minute TTL)
+  - [ ] Configure cache size and eviction policies
+  - [ ] Add cache hit/miss metrics using Caffeine stats
+  - [ ] Handle cache refresh and async loading
+- [ ] **1.6** Add configuration properties
+  - [ ] Security service URL configuration
+  - [ ] Portfolio service URL configuration
+  - [ ] Caffeine cache TTL configuration (default: 5 minutes)
+  - [ ] Caffeine cache size configuration
+  - [ ] Service timeout configuration
+
+### Phase 2: DTO Modifications
+- [ ] **2.1** Create new DTOs
+  - [ ] Create `SecurityDTO` class with `securityId` and `ticker` fields
+  - [ ] Create `PortfolioDTO` class with `portfolioId` and `name` fields
+- [ ] **2.2** Update `OrderWithDetailsDTO`
+  - [ ] Replace `String securityId` with `SecurityDTO security`
+  - [ ] Replace `String portfolioId` with `PortfolioDTO portfolio`
+  - [ ] Update builder patterns and constructors
+- [ ] **2.3** Update mapping methods in `OrderService`
+  - [ ] Modify `toDto()` method to populate security and portfolio objects
+  - [ ] Add service calls to fetch security and portfolio data
+  - [ ] Handle cases where external services are unavailable
+
+### Phase 3: Repository & Database Enhancements
+- [ ] **3.1** Enhance `OrderRepository` for paging
+  - [ ] Add `Pageable` parameter support to existing methods
+  - [ ] Create `findAllWithPaging(Pageable pageable)` method
+  - [ ] Test pagination with various limit/offset combinations
+- [ ] **3.2** Implement dynamic sorting
+  - [ ] Create `SortingSpecification` utility class
+  - [ ] Map sort field names to entity properties
+  - [ ] Handle nested field sorting (security.ticker, portfolio.name, etc.)
+  - [ ] Implement multi-field sorting with direction support
+- [ ] **3.3** Implement dynamic filtering
+  - [ ] Create `FilteringSpecification` utility class
+  - [ ] Implement field-specific filtering logic
+  - [ ] Support multiple values per filter (OR logic)
+  - [ ] Support multiple filters (AND logic)
+  - [ ] Handle nested field filtering
+
+### Phase 4: Controller Updates
+- [ ] **4.1** Update `OrderController.getAllOrders()` method
+  - [ ] Add `@RequestParam` for `limit` (default: 50, max: 1000)
+  - [ ] Add `@RequestParam` for `offset` (default: 0)
+  - [ ] Add validation for limit range (1-1000)
+- [ ] **4.2** Implement sorting in controller
+  - [ ] Add `@RequestParam` for `sort` parameter
+  - [ ] Parse comma-separated sort fields
+  - [ ] Validate sort field names against allowed list
+  - [ ] Handle ascending/descending direction parsing
+  - [ ] Return 400 error for invalid sort fields
+- [ ] **4.3** Implement filtering in controller
+  - [ ] Add `@RequestParam` for each filterable field
+  - [ ] Parse comma-separated filter values
+  - [ ] Validate filter field names
+  - [ ] Handle URL decoding for filter values
+- [ ] **4.4** Integration and response handling
+  - [ ] Combine paging, sorting, and filtering in service calls
+  - [ ] Ensure proper error handling and validation
+  - [ ] Add response headers for pagination metadata
+
+### Phase 5: Service Layer Updates
+- [ ] **5.1** Update `OrderService.getAll()` method
+  - [ ] Add parameters for limit, offset, sort, and filters
+  - [ ] Implement pagination logic
+  - [ ] Implement sorting logic with external service data
+  - [ ] Implement filtering logic with external service data
+- [ ] **5.2** Optimize service calls
+  - [ ] Batch security lookups where possible
+  - [ ] Batch portfolio lookups where possible
+  - [ ] Implement parallel service calls when appropriate
+  - [ ] Add circuit breaker pattern for external services
+
+### Phase 6: Testing
+- [ ] **6.1** Unit Tests
+  - [ ] Test `SecurityServiceClient` and `PortfolioServiceClient`
+  - [ ] Test Caffeine caching services with TTL behavior
+  - [ ] Test Caffeine cache eviction and size limits
+  - [ ] Test sorting specification with all field types
+  - [ ] Test filtering specification with all field types
+  - [ ] Test controller parameter validation
+- [ ] **6.2** Integration Tests
+  - [ ] Test end-to-end paging functionality
+  - [ ] Test sorting with nested fields
+  - [ ] Test filtering with multiple values and fields
+  - [ ] Test error scenarios (invalid sort fields, service failures)
+  - [ ] Test Caffeine cache behavior under load
+  - [ ] Test cache refresh and async loading scenarios
+- [ ] **6.3** Performance Tests
+  - [ ] Test pagination performance with large datasets
+  - [ ] Test Caffeine cache hit ratio and performance improvement
+  - [ ] Test sorting performance with external service calls
+  - [ ] Load test with multiple concurrent requests
+  - [ ] Benchmark cache vs no-cache performance
+
+### Phase 7: Documentation & Configuration
+- [ ] **7.1** Update OpenAPI specification
+  - [ ] Add new query parameters to `/orders` endpoint
+  - [ ] Document all filterable and sortable fields
+  - [ ] Add examples for complex queries
+  - [ ] Update response schema for new DTO structure
+- [ ] **7.2** Update API Usage Guide
+  - [ ] Add pagination examples
+  - [ ] Add sorting examples with nested fields
+  - [ ] Add filtering examples with multiple values
+  - [ ] Add performance recommendations
+- [ ] **7.3** Configuration and deployment
+  - [ ] Add service discovery configuration
+  - [ ] Add monitoring and alerting for external service calls
+  - [ ] Configure Caffeine cache metrics and monitoring (hit rate, eviction rate, load time)
+  - [ ] Configure JMX exposure for Caffeine cache statistics
+  - [ ] Update health check to include external service status
+
+### Phase 8: Validation & Rollout
+- [ ] **8.1** End-to-end validation
+  - [ ] Validate all query parameter combinations work correctly
+  - [ ] Validate error messages are clear and helpful
+  - [ ] Validate performance meets requirements
+  - [ ] Validate cache behavior is correct
+- [ ] **8.2** Production rollout
+  - [ ] Deploy to staging environment
+  - [ ] Run smoke tests in staging
+  - [ ] Monitor external service integration
+  - [ ] Deploy to production with feature flags
+  - [ ] Monitor performance and error rates
+
+---
