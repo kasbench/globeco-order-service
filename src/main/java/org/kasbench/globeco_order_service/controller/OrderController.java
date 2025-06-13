@@ -6,6 +6,9 @@ import org.kasbench.globeco_order_service.dto.OrderPostDTO;
 import org.kasbench.globeco_order_service.dto.OrderWithDetailsDTO;
 import org.kasbench.globeco_order_service.dto.OrderListResponseDTO;
 import org.kasbench.globeco_order_service.service.OrderService;
+import org.kasbench.globeco_order_service.service.SortingSpecification;
+import org.kasbench.globeco_order_service.service.FilteringSpecification;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,7 +16,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -21,12 +27,143 @@ import java.util.List;
 public class OrderController {
     private static final Logger logger = LoggerFactory.getLogger(OrderController.class);
     private static final int MAX_BATCH_SIZE = 1000;
+    private static final int DEFAULT_LIMIT = 50;
+    private static final int MAX_LIMIT = 1000;
     
     private final OrderService orderService;
 
+    /**
+     * Get all orders with support for paging, sorting, and filtering.
+     * 
+     * @param limit Maximum number of results to return (1-1000, default: 50)
+     * @param offset Number of results to skip (default: 0)
+     * @param sort Comma-separated list of sort fields with optional direction prefix (default: id)
+     * @param securityTicker Filter by security ticker (supports comma-separated values)
+     * @param portfolioName Filter by portfolio name (supports comma-separated values)
+     * @param blotterName Filter by blotter name (supports comma-separated values)
+     * @param statusAbbreviation Filter by status abbreviation (supports comma-separated values)
+     * @param orderTypeAbbreviation Filter by order type abbreviation (supports comma-separated values)
+     * @param orderTimestamp Filter by order timestamp (ISO format)
+     * @param request HttpServletRequest for extracting additional filter parameters
+     * @return Page of orders with pagination metadata
+     */
     @GetMapping("/orders")
-    public List<OrderWithDetailsDTO> getAllOrders() {
-        return orderService.getAll();
+    public ResponseEntity<?> getAllOrders(
+            @RequestParam(value = "limit", defaultValue = "50") Integer limit,
+            @RequestParam(value = "offset", defaultValue = "0") Integer offset,
+            @RequestParam(value = "sort", required = false) String sort,
+            @RequestParam(value = "security.ticker", required = false) String securityTicker,
+            @RequestParam(value = "portfolio.name", required = false) String portfolioName,
+            @RequestParam(value = "blotter.name", required = false) String blotterName,
+            @RequestParam(value = "status.abbreviation", required = false) String statusAbbreviation,
+            @RequestParam(value = "orderType.abbreviation", required = false) String orderTypeAbbreviation,
+            @RequestParam(value = "orderTimestamp", required = false) String orderTimestamp,
+            HttpServletRequest request) {
+        
+        try {
+            // Validate limit parameter
+            if (limit < 1 || limit > MAX_LIMIT) {
+                logger.warn("Invalid limit parameter: {}. Must be between 1 and {}", limit, MAX_LIMIT);
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Invalid limit parameter",
+                    "message", String.format("Limit must be between 1 and %d, got: %d", MAX_LIMIT, limit)
+                ));
+            }
+            
+            // Validate offset parameter
+            if (offset < 0) {
+                logger.warn("Invalid offset parameter: {}. Must be >= 0", offset);
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Invalid offset parameter", 
+                    "message", String.format("Offset must be >= 0, got: %d", offset)
+                ));
+            }
+            
+            // Validate sort fields
+            try {
+                SortingSpecification.validateSortFields(sort);
+            } catch (IllegalArgumentException e) {
+                logger.warn("Invalid sort parameter: {} - {}", sort, e.getMessage());
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Invalid sort parameter",
+                    "message", e.getMessage(),
+                    "validSortFields", SortingSpecification.getValidSortFields()
+                ));
+            }
+            
+            // Build filter parameters map
+            Map<String, String> filterParams = new HashMap<>();
+            if (securityTicker != null && !securityTicker.trim().isEmpty()) {
+                filterParams.put("security.ticker", securityTicker);
+            }
+            if (portfolioName != null && !portfolioName.trim().isEmpty()) {
+                filterParams.put("portfolio.name", portfolioName);
+            }
+            if (blotterName != null && !blotterName.trim().isEmpty()) {
+                filterParams.put("blotter.name", blotterName);
+            }
+            if (statusAbbreviation != null && !statusAbbreviation.trim().isEmpty()) {
+                filterParams.put("status.abbreviation", statusAbbreviation);
+            }
+            if (orderTypeAbbreviation != null && !orderTypeAbbreviation.trim().isEmpty()) {
+                filterParams.put("orderType.abbreviation", orderTypeAbbreviation);
+            }
+            if (orderTimestamp != null && !orderTimestamp.trim().isEmpty()) {
+                filterParams.put("orderTimestamp", orderTimestamp);
+            }
+            
+            // Validate filter fields
+            try {
+                FilteringSpecification.validateFilterFields(filterParams);
+            } catch (IllegalArgumentException e) {
+                logger.warn("Invalid filter parameters: {} - {}", filterParams, e.getMessage());
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Invalid filter parameter",
+                    "message", e.getMessage(),
+                    "validFilterFields", FilteringSpecification.getValidFilterFields()
+                ));
+            }
+            
+            // Log the request for debugging
+            logger.debug("Orders request: limit={}, offset={}, sort={}, filters={}", 
+                    limit, offset, sort, filterParams);
+            
+            // Call service layer with all parameters
+            Page<OrderWithDetailsDTO> result = orderService.getAll(limit, offset, sort, filterParams);
+            
+            // Create response with pagination metadata
+            Map<String, Object> response = new HashMap<>();
+            response.put("content", result.getContent());
+            response.put("pagination", Map.of(
+                "totalElements", result.getTotalElements(),
+                "totalPages", result.getTotalPages(),
+                "currentPage", result.getNumber(),
+                "pageSize", result.getSize(),
+                "hasNext", result.hasNext(),
+                "hasPrevious", result.hasPrevious()
+            ));
+            
+            logger.debug("Orders response: totalElements={}, currentPage={}, pageSize={}", 
+                    result.getTotalElements(), result.getNumber(), result.getSize());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (IllegalArgumentException e) {
+            // Handle validation errors from service layer
+            logger.warn("Validation error in getAllOrders: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Validation error",
+                "message", e.getMessage()
+            ));
+            
+        } catch (Exception e) {
+            // Handle unexpected errors
+            logger.error("Unexpected error in getAllOrders", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                "error", "Internal server error",
+                "message", "An unexpected error occurred while processing the request"
+            ));
+        }
     }
 
     @GetMapping("/order/{id}")

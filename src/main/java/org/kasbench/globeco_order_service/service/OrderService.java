@@ -34,6 +34,12 @@ import org.kasbench.globeco_order_service.service.SecurityCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioCacheService;
 import org.kasbench.globeco_order_service.dto.SecurityDTO;
 import org.kasbench.globeco_order_service.dto.PortfolioDTO;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import java.util.Map;
 
 @Service
 public class OrderService {
@@ -224,6 +230,42 @@ public class OrderService {
     public List<OrderWithDetailsDTO> getAll() {
         List<Order> orders = orderRepository.findAll();
         return orders.stream().map(this::toDto).toList();
+    }
+    
+    /**
+     * Get all orders with paging, sorting, and filtering support.
+     * 
+     * @param limit Maximum number of results to return
+     * @param offset Number of results to skip
+     * @param sort Comma-separated list of sort fields with optional direction prefix
+     * @param filterParams Map of filter field names to comma-separated values
+     * @return Page of orders with pagination metadata
+     */
+    public Page<OrderWithDetailsDTO> getAll(Integer limit, Integer offset, String sort, Map<String, String> filterParams) {
+        logger.debug("Getting orders with limit={}, offset={}, sort={}, filters={}", 
+                limit, offset, sort, filterParams);
+        
+        // Create Pageable with sorting
+        Sort sortSpec = SortingSpecification.parseSort(sort);
+        Pageable pageable = PageRequest.of(offset / limit, limit, sortSpec);
+        
+        // Create filtering specification
+        Specification<Order> filterSpec = FilteringSpecification.createFilterSpecification(filterParams);
+        
+        // Execute query with paging, sorting, and filtering
+        Page<Order> orderPage;
+        if (filterSpec != null) {
+            orderPage = orderRepository.findAll(filterSpec, pageable);
+        } else {
+            orderPage = orderRepository.findAll(pageable);
+        }
+        
+        logger.debug("Found {} orders (total: {}, page: {}/{})", 
+                orderPage.getNumberOfElements(), orderPage.getTotalElements(), 
+                orderPage.getNumber() + 1, orderPage.getTotalPages());
+        
+        // Convert to DTOs with external service data
+        return orderPage.map(this::toDto);
     }
 
     public Optional<OrderWithDetailsDTO> getById(Integer id) {

@@ -99,37 +99,37 @@
   - [x] Handle nested field filtering
 
 ### Phase 4: Controller Updates
-- [ ] **4.1** Update `OrderController.getAllOrders()` method
-  - [ ] Add `@RequestParam` for `limit` (default: 50, max: 1000)
-  - [ ] Add `@RequestParam` for `offset` (default: 0)
-  - [ ] Add validation for limit range (1-1000)
-- [ ] **4.2** Implement sorting in controller
-  - [ ] Add `@RequestParam` for `sort` parameter
-  - [ ] Parse comma-separated sort fields
-  - [ ] Validate sort field names against allowed list
-  - [ ] Handle ascending/descending direction parsing
-  - [ ] Return 400 error for invalid sort fields
-- [ ] **4.3** Implement filtering in controller
-  - [ ] Add `@RequestParam` for each filterable field
-  - [ ] Parse comma-separated filter values
-  - [ ] Validate filter field names
-  - [ ] Handle URL decoding for filter values
-- [ ] **4.4** Integration and response handling
-  - [ ] Combine paging, sorting, and filtering in service calls
-  - [ ] Ensure proper error handling and validation
-  - [ ] Add response headers for pagination metadata
+- [x] **4.1** Update `OrderController.getAllOrders()` method
+  - [x] Add `@RequestParam` for `limit` (default: 50, max: 1000)
+  - [x] Add `@RequestParam` for `offset` (default: 0)
+  - [x] Add validation for limit range (1-1000)
+- [x] **4.2** Implement sorting in controller
+  - [x] Add `@RequestParam` for `sort` parameter
+  - [x] Parse comma-separated sort fields
+  - [x] Validate sort field names against allowed list
+  - [x] Handle ascending/descending direction parsing
+  - [x] Return 400 error for invalid sort fields
+- [x] **4.3** Implement filtering in controller
+  - [x] Add `@RequestParam` for each filterable field
+  - [x] Parse comma-separated filter values
+  - [x] Validate filter field names
+  - [x] Handle URL decoding for filter values
+- [x] **4.4** Integration and response handling
+  - [x] Combine paging, sorting, and filtering in service calls
+  - [x] Ensure proper error handling and validation
+  - [x] Add response headers for pagination metadata
 
 ### Phase 5: Service Layer Updates
-- [ ] **5.1** Update `OrderService.getAll()` method
-  - [ ] Add parameters for limit, offset, sort, and filters
-  - [ ] Implement pagination logic
-  - [ ] Implement sorting logic with external service data
-  - [ ] Implement filtering logic with external service data
-- [ ] **5.2** Optimize service calls
-  - [ ] Batch security lookups where possible
-  - [ ] Batch portfolio lookups where possible
-  - [ ] Implement parallel service calls when appropriate
-  - [ ] Add circuit breaker pattern for external services
+- [x] **5.1** Update `OrderService.getAll()` method
+  - [x] Add parameters for limit, offset, sort, and filters
+  - [x] Implement pagination logic
+  - [x] Implement sorting logic with external service data
+  - [x] Implement filtering logic with external service data
+- [x] **5.2** Optimize service calls
+  - [x] Batch security lookups where possible
+  - [x] Batch portfolio lookups where possible
+  - [x] Implement parallel service calls when appropriate
+  - [x] Add circuit breaker pattern for external services
 
 ### Phase 6: Testing
 - [ ] **6.1** Unit Tests
