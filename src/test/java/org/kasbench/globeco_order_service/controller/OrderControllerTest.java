@@ -18,6 +18,9 @@ import java.util.Arrays;
 import java.util.Optional;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -51,9 +54,15 @@ public class OrderControllerTest {
                 .id(10)
                 .blotter(blotterDTO)
                 .status(statusDTO)
-                .portfolioId("PORT12345678901234567890")
+                .portfolio(PortfolioDTO.builder()
+                        .portfolioId("PORT12345678901234567890")
+                        .name("Test Portfolio")
+                        .build())
                 .orderType(orderTypeDTO)
-                .securityId("SEC12345678901234567890")
+                .security(SecurityDTO.builder()
+                        .securityId("SEC12345678901234567890")
+                        .ticker("AAPL")
+                        .build())
                 .quantity(new BigDecimal("100.00000000"))
                 .limitPrice(new BigDecimal("50.25000000"))
                 .orderTimestamp(now)
@@ -321,10 +330,15 @@ public class OrderControllerTest {
 
     @Test
     void testGetAllOrders() throws Exception {
-        Mockito.when(orderService.getAll()).thenReturn(Arrays.asList(orderWithDetailsDTO));
+        // Mock the paginated getAll method instead of the simple getAll method
+        Page<OrderWithDetailsDTO> mockPage = new PageImpl<>(Arrays.asList(orderWithDetailsDTO));
+        Mockito.when(orderService.getAll(eq(50), eq(0), eq(null), any(Map.class)))
+               .thenReturn(mockPage);
+        
         mockMvc.perform(get("/api/v1/orders"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(10));
+                .andExpect(jsonPath("$.content[0].id").value(10))
+                .andExpect(jsonPath("$.pagination.totalElements").value(1));
     }
 
     @Test

@@ -264,8 +264,10 @@ public class OrderDtoIntegrationTest {
         verifyOrderDtoIsProperlyPopulated(createdOrder);
         
         // Verify specific values from our POST
-        assertEquals("TEST_PORTFOLIO_123", createdOrder.getPortfolioId());
-        assertEquals("TEST_SECURITY_456", createdOrder.getSecurityId());
+        assertNotNull(createdOrder.getPortfolio());
+        assertEquals("TEST_PORTFOLIO_123", createdOrder.getPortfolio().getPortfolioId());
+        assertNotNull(createdOrder.getSecurity());
+        assertEquals("TEST_SECURITY_456", createdOrder.getSecurity().getSecurityId());
         assertEquals(new BigDecimal("100.00"), createdOrder.getQuantity());
         assertEquals(new BigDecimal("50.25"), createdOrder.getLimitPrice());
         
@@ -381,8 +383,9 @@ public class OrderDtoIntegrationTest {
         assertNotNull(order.getVersion(), "Order version should not be null");
         
         // Verify core fields that should now be populated
-        assertNotNull(order.getPortfolioId(), "Portfolio ID should not be null");
-        assertFalse(order.getPortfolioId().isEmpty(), "Portfolio ID should not be empty");
+        assertNotNull(order.getPortfolio(), "Portfolio should not be null");
+        assertNotNull(order.getPortfolio().getPortfolioId(), "Portfolio ID should not be null");
+        assertFalse(order.getPortfolio().getPortfolioId().isEmpty(), "Portfolio ID should not be empty");
         
         // Verify nested DTOs are properly populated (this was the main issue)
         assertNotNull(order.getStatus(), "Status DTO should not be null");

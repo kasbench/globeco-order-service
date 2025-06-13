@@ -20,6 +20,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -91,25 +92,27 @@ public class OrderController {
                 ));
             }
             
-            // Build filter parameters map
+            // Build filter parameters map from all request parameters
             Map<String, String> filterParams = new HashMap<>();
-            if (securityTicker != null && !securityTicker.trim().isEmpty()) {
-                filterParams.put("security.ticker", securityTicker);
-            }
-            if (portfolioName != null && !portfolioName.trim().isEmpty()) {
-                filterParams.put("portfolio.name", portfolioName);
-            }
-            if (blotterName != null && !blotterName.trim().isEmpty()) {
-                filterParams.put("blotter.name", blotterName);
-            }
-            if (statusAbbreviation != null && !statusAbbreviation.trim().isEmpty()) {
-                filterParams.put("status.abbreviation", statusAbbreviation);
-            }
-            if (orderTypeAbbreviation != null && !orderTypeAbbreviation.trim().isEmpty()) {
-                filterParams.put("orderType.abbreviation", orderTypeAbbreviation);
-            }
-            if (orderTimestamp != null && !orderTimestamp.trim().isEmpty()) {
-                filterParams.put("orderTimestamp", orderTimestamp);
+            
+            // Get all request parameters and filter out non-filter parameters
+            Set<String> nonFilterParams = Set.of("limit", "offset", "sort");
+            for (Map.Entry<String, String[]> entry : request.getParameterMap().entrySet()) {
+                String paramName = entry.getKey();
+                String[] paramValues = entry.getValue();
+                
+                // Skip non-filter parameters
+                if (nonFilterParams.contains(paramName)) {
+                    continue;
+                }
+                
+                // For filter parameters, join multiple values with comma
+                if (paramValues != null && paramValues.length > 0) {
+                    String paramValue = String.join(",", paramValues);
+                    if (!paramValue.trim().isEmpty()) {
+                        filterParams.put(paramName, paramValue);
+                    }
+                }
             }
             
             // Validate filter fields
