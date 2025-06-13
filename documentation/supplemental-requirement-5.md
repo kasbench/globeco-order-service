@@ -189,11 +189,14 @@ The existing `POST /api/v1/orders/{id}/submit` endpoint will remain unchanged an
   - [x] Return appropriate HTTP status codes per specification
 
 ### Phase 4: Testing
-- [ ] **4.1** Unit Tests
-  - [ ] Test `OrderService.submitOrdersBatch()` with various scenarios
-  - [ ] Test success, partial success, and complete failure cases
-  - [ ] Test validation logic for order states and existence
-  - [ ] Test error handling and edge cases
+- [x] **4.1** Unit Tests
+  - [x] Test `OrderService.submitOrdersBatch()` with various scenarios
+  - [x] Test success, partial success, and complete failure cases
+  - [x] Test validation logic for order states and existence
+  - [x] Test error handling and edge cases
+  - [x] Test `OrderController.submitOrdersBatch()` endpoint with various scenarios
+  - [x] Test HTTP status code handling (200, 207, 400, 413, 500)
+  - [x] Test request validation and error responses
 - [ ] **4.2** Integration Tests
   - [ ] Test full batch submission flow end-to-end
   - [ ] Test Trade Service integration with batch processing

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.kasbench.globeco_order_service.dto.*;
+import org.kasbench.globeco_order_service.dto.BatchSubmitRequestDTO;
+import org.kasbench.globeco_order_service.dto.BatchSubmitResponseDTO;
+import org.kasbench.globeco_order_service.dto.OrderSubmitResultDTO;
 import org.kasbench.globeco_order_service.service.OrderService;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -420,5 +423,274 @@ public class OrderControllerTest {
         mockMvc.perform(post("/api/v1/orders/10/submit"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value("not submitted"));
+    }
+
+    // =============== BATCH SUBMISSION TESTS ===============
+
+    @Test
+    void testSubmitOrdersBatch_AllSuccess() throws Exception {
+        // Setup test data
+        List<Integer> orderIds = Arrays.asList(1, 2, 3);
+        BatchSubmitRequestDTO request = BatchSubmitRequestDTO.builder()
+                .orderIds(orderIds)
+                .build();
+        
+        // Create successful results
+        List<OrderSubmitResultDTO> results = Arrays.asList(
+            OrderSubmitResultDTO.success(1, 11111, 0),
+            OrderSubmitResultDTO.success(2, 22222, 1),
+            OrderSubmitResultDTO.success(3, 33333, 2)
+        );
+        
+        BatchSubmitResponseDTO successResponse = BatchSubmitResponseDTO.success(results);
+        
+        // Mock service response
+        Mockito.when(orderService.submitOrdersBatch(orderIds)).thenReturn(successResponse);
+        
+        // Execute request
+        String response = mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk()) // HTTP 200 for complete success
+                .andReturn().getResponse().getContentAsString();
+        
+        // Verify response
+        BatchSubmitResponseDTO result = objectMapper.readValue(response, BatchSubmitResponseDTO.class);
+        assertEquals("SUCCESS", result.getStatus());
+        assertEquals(3, result.getTotalRequested());
+        assertEquals(3, result.getSuccessful());
+        assertEquals(0, result.getFailed());
+        assertEquals(3, result.getResults().size());
+        assertTrue(result.getMessage().contains("All 3 orders submitted successfully"));
+    }
+
+    @Test
+    void testSubmitOrdersBatch_PartialSuccess() throws Exception {
+        // Setup test data
+        List<Integer> orderIds = Arrays.asList(1, 2, 3);
+        BatchSubmitRequestDTO request = BatchSubmitRequestDTO.builder()
+                .orderIds(orderIds)
+                .build();
+        
+        // Create mixed results
+        List<OrderSubmitResultDTO> results = Arrays.asList(
+            OrderSubmitResultDTO.success(1, 11111, 0),
+            OrderSubmitResultDTO.failure(2, "Order not in NEW status", 1),
+            OrderSubmitResultDTO.success(3, 33333, 2)
+        );
+        
+        BatchSubmitResponseDTO partialResponse = BatchSubmitResponseDTO.partial(results);
+        
+        // Mock service response
+        Mockito.when(orderService.submitOrdersBatch(orderIds)).thenReturn(partialResponse);
+        
+        // Execute request
+        String response = mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isMultiStatus()) // HTTP 207 for partial success
+                .andReturn().getResponse().getContentAsString();
+        
+        // Verify response
+        BatchSubmitResponseDTO result = objectMapper.readValue(response, BatchSubmitResponseDTO.class);
+        assertEquals("PARTIAL", result.getStatus());
+        assertEquals(3, result.getTotalRequested());
+        assertEquals(2, result.getSuccessful());
+        assertEquals(1, result.getFailed());
+        assertEquals(3, result.getResults().size());
+        assertTrue(result.getMessage().contains("2 of 3 orders submitted successfully"));
+    }
+
+    @Test
+    void testSubmitOrdersBatch_AllFailure() throws Exception {
+        // Setup test data
+        List<Integer> orderIds = Arrays.asList(999, 998, 997);
+        BatchSubmitRequestDTO request = BatchSubmitRequestDTO.builder()
+                .orderIds(orderIds)
+                .build();
+        
+        // Create failure results
+        List<OrderSubmitResultDTO> results = Arrays.asList(
+            OrderSubmitResultDTO.failure(999, "Order not found", 0),
+            OrderSubmitResultDTO.failure(998, "Order not found", 1),
+            OrderSubmitResultDTO.failure(997, "Order not found", 2)
+        );
+        
+        BatchSubmitResponseDTO failureResponse = BatchSubmitResponseDTO.failure("All orders failed to submit", 3, results);
+        
+        // Mock service response
+        Mockito.when(orderService.submitOrdersBatch(orderIds)).thenReturn(failureResponse);
+        
+        // Execute request
+        String response = mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isMultiStatus()) // HTTP 207 for processing failures
+                .andReturn().getResponse().getContentAsString();
+        
+        // Verify response
+        BatchSubmitResponseDTO result = objectMapper.readValue(response, BatchSubmitResponseDTO.class);
+        assertEquals("FAILURE", result.getStatus());
+        assertEquals(3, result.getTotalRequested());
+        assertEquals(0, result.getSuccessful());
+        assertEquals(3, result.getFailed());
+    }
+
+    @Test
+    void testSubmitOrdersBatch_ExceedsBatchSizeLimit() throws Exception {
+        // Create a list with more than 100 orders
+        List<Integer> orderIds = new ArrayList<>();
+        for (int i = 1; i <= 101; i++) {
+            orderIds.add(i);
+        }
+        
+        BatchSubmitRequestDTO request = BatchSubmitRequestDTO.builder()
+                .orderIds(orderIds)
+                .build();
+        
+        // Execute request
+        mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isRequestEntityTooLarge()); // HTTP 413 for batch size exceeded
+    }
+
+    @Test
+    void testSubmitOrdersBatch_EmptyBatch() throws Exception {
+        // Setup empty batch
+        List<Integer> orderIds = new ArrayList<>();
+        BatchSubmitRequestDTO request = BatchSubmitRequestDTO.builder()
+                .orderIds(orderIds)
+                .build();
+        
+        // Execute request
+        mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest()); // HTTP 400 for empty batch
+    }
+
+    @Test
+    void testSubmitOrdersBatch_NullRequest() throws Exception {
+        // Execute request with null body
+        mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("null"))
+                .andExpect(status().isBadRequest()); // HTTP 400 for null request
+    }
+
+    @Test
+    void testSubmitOrdersBatch_NullOrderIds() throws Exception {
+        // Setup request with null orderIds
+        BatchSubmitRequestDTO request = BatchSubmitRequestDTO.builder()
+                .orderIds(null)
+                .build();
+        
+        // Execute request
+        mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest()); // HTTP 400 for null orderIds
+    }
+
+    @Test
+    void testSubmitOrdersBatch_SingleOrder() throws Exception {
+        // Setup test data with single order
+        List<Integer> orderIds = Arrays.asList(1);
+        BatchSubmitRequestDTO request = BatchSubmitRequestDTO.builder()
+                .orderIds(orderIds)
+                .build();
+        
+        // Create successful result
+        List<OrderSubmitResultDTO> results = Arrays.asList(
+            OrderSubmitResultDTO.success(1, 11111, 0)
+        );
+        
+        BatchSubmitResponseDTO successResponse = BatchSubmitResponseDTO.success(results);
+        
+        // Mock service response
+        Mockito.when(orderService.submitOrdersBatch(orderIds)).thenReturn(successResponse);
+        
+        // Execute request
+        String response = mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk()) // HTTP 200 for complete success
+                .andReturn().getResponse().getContentAsString();
+        
+        // Verify response
+        BatchSubmitResponseDTO result = objectMapper.readValue(response, BatchSubmitResponseDTO.class);
+        assertEquals("SUCCESS", result.getStatus());
+        assertEquals(1, result.getTotalRequested());
+        assertEquals(1, result.getSuccessful());
+        assertEquals(0, result.getFailed());
+        assertEquals(1, result.getResults().size());
+    }
+
+    @Test
+    void testSubmitOrdersBatch_MaxBatchSize() throws Exception {
+        // Create exactly 100 orders (maximum allowed)
+        List<Integer> orderIds = new ArrayList<>();
+        for (int i = 1; i <= 100; i++) {
+            orderIds.add(i);
+        }
+        
+        BatchSubmitRequestDTO request = BatchSubmitRequestDTO.builder()
+                .orderIds(orderIds)
+                .build();
+        
+        // Create successful results for all orders
+        List<OrderSubmitResultDTO> results = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            results.add(OrderSubmitResultDTO.success(i + 1, 10000 + i, i));
+        }
+        
+        BatchSubmitResponseDTO successResponse = BatchSubmitResponseDTO.success(results);
+        
+        // Mock service response
+        Mockito.when(orderService.submitOrdersBatch(orderIds)).thenReturn(successResponse);
+        
+        // Execute request
+        String response = mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk()) // HTTP 200 for complete success
+                .andReturn().getResponse().getContentAsString();
+        
+        // Verify response
+        BatchSubmitResponseDTO result = objectMapper.readValue(response, BatchSubmitResponseDTO.class);
+        assertEquals("SUCCESS", result.getStatus());
+        assertEquals(100, result.getTotalRequested());
+        assertEquals(100, result.getSuccessful());
+        assertEquals(0, result.getFailed());
+        assertEquals(100, result.getResults().size());
+    }
+
+    @Test
+    void testSubmitOrdersBatch_ServiceException() throws Exception {
+        // Setup test data
+        List<Integer> orderIds = Arrays.asList(1, 2);
+        BatchSubmitRequestDTO request = BatchSubmitRequestDTO.builder()
+                .orderIds(orderIds)
+                .build();
+        
+        // Mock service to throw exception
+        Mockito.when(orderService.submitOrdersBatch(orderIds))
+               .thenThrow(new RuntimeException("Database connection failed"));
+        
+        // Execute request
+        mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isInternalServerError()); // HTTP 500 for service exceptions
+    }
+
+    @Test
+    void testSubmitOrdersBatch_MalformedJson() throws Exception {
+        // Execute request with malformed JSON
+        mockMvc.perform(post("/api/v1/orders/batch/submit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{invalid json"))
+                .andExpect(status().isBadRequest()); // HTTP 400 for malformed JSON
     }
 } 

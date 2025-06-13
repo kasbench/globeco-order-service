@@ -16,6 +16,5 @@ import java.util.List;
 public class BatchSubmitRequestDTO {
     
     @NotNull(message = "Order IDs list is required")
-    @Size(min = 1, max = 100, message = "Batch must contain between 1 and 100 order IDs")
     private List<Integer> orderIds;
 } 
