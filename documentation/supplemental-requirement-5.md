@@ -178,15 +178,15 @@ The existing `POST /api/v1/orders/{id}/submit` endpoint will remain unchanged an
   - [x] Implement timeout and retry logic
 
 ### Phase 3: Controller Implementation  
-- [ ] **3.1** Update `OrderController`
-  - [ ] Add `POST /api/v1/orders/batch/submit` endpoint
-  - [ ] Implement request validation (batch size, null checks)
-  - [ ] Add proper HTTP status code handling
-  - [ ] Implement response mapping from service layer
-- [ ] **3.2** Error Handling
-  - [ ] Add validation for batch size limits (max 100)
-  - [ ] Handle malformed requests gracefully
-  - [ ] Return appropriate HTTP status codes per specification
+- [x] **3.1** Update `OrderController`
+  - [x] Add `POST /api/v1/orders/batch/submit` endpoint
+  - [x] Implement request validation (batch size, null checks)
+  - [x] Add proper HTTP status code handling
+  - [x] Implement response mapping from service layer
+- [x] **3.2** Error Handling
+  - [x] Add validation for batch size limits (max 100)
+  - [x] Handle malformed requests gracefully
+  - [x] Return appropriate HTTP status codes per specification
 
 ### Phase 4: Testing
 - [ ] **4.1** Unit Tests

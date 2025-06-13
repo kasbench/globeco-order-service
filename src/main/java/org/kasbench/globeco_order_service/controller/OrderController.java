@@ -5,6 +5,8 @@ import org.kasbench.globeco_order_service.dto.OrderDTO;
 import org.kasbench.globeco_order_service.dto.OrderPostDTO;
 import org.kasbench.globeco_order_service.dto.OrderWithDetailsDTO;
 import org.kasbench.globeco_order_service.dto.OrderListResponseDTO;
+import org.kasbench.globeco_order_service.dto.BatchSubmitRequestDTO;
+import org.kasbench.globeco_order_service.dto.BatchSubmitResponseDTO;
 import org.kasbench.globeco_order_service.service.OrderService;
 import org.kasbench.globeco_order_service.service.SortingSpecification;
 import org.kasbench.globeco_order_service.service.FilteringSpecification;
@@ -28,6 +30,7 @@ import java.util.Set;
 public class OrderController {
     private static final Logger logger = LoggerFactory.getLogger(OrderController.class);
     private static final int MAX_BATCH_SIZE = 1000;
+    private static final int MAX_SUBMIT_BATCH_SIZE = 100;
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 1000;
     
@@ -284,6 +287,115 @@ public class OrderController {
             return ResponseEntity.ok(orderDTO);
         } else {
             return ResponseEntity.badRequest().body(java.util.Collections.singletonMap("status", "not submitted"));
+        }
+    }
+
+    /**
+     * Submit multiple orders in batch to the trade service.
+     * Processes orders individually (non-atomic batch) and continues processing
+     * even if some orders fail.
+     * 
+     * Returns appropriate HTTP status codes based on processing results:
+     * - 200: All orders submitted successfully
+     * - 207: Partial success (some orders succeeded, others failed)
+     * - 400: Request validation failed
+     * - 413: Batch size exceeds maximum allowed (100)
+     * - 500: Unexpected server error
+     * 
+     * @param request The batch submission request containing order IDs
+     * @return BatchSubmitResponseDTO containing results for each order
+     */
+    @PostMapping("/orders/batch/submit")
+    public ResponseEntity<BatchSubmitResponseDTO> submitOrdersBatch(@Valid @RequestBody BatchSubmitRequestDTO request) {
+        logger.info("Received batch order submission request with {} order IDs", 
+                request != null && request.getOrderIds() != null ? request.getOrderIds().size() : 0);
+        
+        try {
+            // Validate request is not null
+            if (request == null || request.getOrderIds() == null) {
+                logger.warn("Batch submission request rejected: null request or order IDs");
+                BatchSubmitResponseDTO errorResponse = BatchSubmitResponseDTO.validationFailure(
+                    "Request body is required and must contain orderIds array");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            // Validate batch is not empty
+            if (request.getOrderIds().isEmpty()) {
+                logger.warn("Batch submission request rejected: empty order IDs list");
+                BatchSubmitResponseDTO errorResponse = BatchSubmitResponseDTO.validationFailure(
+                    "Order IDs list cannot be empty");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            // Validate batch size limit
+            if (request.getOrderIds().size() > MAX_SUBMIT_BATCH_SIZE) {
+                logger.warn("Batch submission request rejected: size {} exceeds maximum {}", 
+                        request.getOrderIds().size(), MAX_SUBMIT_BATCH_SIZE);
+                BatchSubmitResponseDTO errorResponse = BatchSubmitResponseDTO.validationFailure(
+                    String.format("Batch size %d exceeds maximum allowed size of %d", 
+                            request.getOrderIds().size(), MAX_SUBMIT_BATCH_SIZE));
+                return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(errorResponse);
+            }
+            
+            // Validate order IDs are not null
+            if (request.getOrderIds().stream().anyMatch(java.util.Objects::isNull)) {
+                logger.warn("Batch submission request rejected: contains null order IDs");
+                BatchSubmitResponseDTO errorResponse = BatchSubmitResponseDTO.validationFailure(
+                    "Order IDs cannot contain null values");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            // Process the batch through service layer
+            BatchSubmitResponseDTO response = orderService.submitOrdersBatch(request.getOrderIds());
+            
+            // Determine appropriate HTTP status code based on results
+            HttpStatus statusCode = determineBatchSubmitHttpStatus(response);
+            
+            logger.info("Batch submission processing completed: status={}, total={}, successful={}, failed={}", 
+                    response.getStatus(), response.getTotalRequested(), 
+                    response.getSuccessful(), response.getFailed());
+            
+            return ResponseEntity.status(statusCode).body(response);
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error processing batch submission request", e);
+            BatchSubmitResponseDTO errorResponse = BatchSubmitResponseDTO.validationFailure(
+                "Internal server error processing batch submission request: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+    
+    /**
+     * Determine appropriate HTTP status code based on batch submission results.
+     * 
+     * @param response The batch submission results
+     * @return Appropriate HttpStatus
+     */
+    private HttpStatus determineBatchSubmitHttpStatus(BatchSubmitResponseDTO response) {
+        if (response == null) {
+            return HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+        
+        switch (response.getStatus()) {
+            case "SUCCESS":
+                return HttpStatus.OK; // 200 - All orders submitted successfully
+                
+            case "PARTIAL": 
+                return HttpStatus.MULTI_STATUS; // 207 - Some succeeded, some failed
+                
+            case "FAILURE":
+                // Distinguish between validation failures and processing failures
+                if (response.getTotalRequested() == 0) {
+                    // This was a validation failure before processing
+                    return HttpStatus.BAD_REQUEST; // 400 - Request validation failed
+                } else {
+                    // All orders failed during processing
+                    return HttpStatus.MULTI_STATUS; // 207 - Processing attempted but all failed
+                }
+                
+            default:
+                logger.warn("Unknown batch submission response status: {}", response.getStatus());
+                return HttpStatus.INTERNAL_SERVER_ERROR; // 500 - Unknown status
         }
     }
 } 
