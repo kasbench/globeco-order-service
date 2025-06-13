@@ -326,18 +326,243 @@ paths:
           $ref: '#/components/responses/Conflict'
   /orders:
     get:
-      summary: List all orders
+      summary: List all orders with pagination, sorting, and filtering
       operationId: listOrders
       tags: [Order]
+      description: |
+        Retrieve orders with advanced pagination, sorting, and filtering capabilities.
+        
+        **Pagination:**
+        - `limit`: Number of orders to return (1-1000, default: 50)
+        - `offset`: Number of orders to skip (default: 0)
+        
+        **Sorting:**
+        - `sort`: Comma-separated list of fields to sort by
+        - Prefix with `-` for descending order (e.g., `-orderTimestamp`)
+        - Valid fields: `id`, `security.ticker`, `portfolio.name`, `blotter.name`, `status.abbreviation`, `orderType.abbreviation`, `quantity`, `orderTimestamp`
+        - Default: `id` (ascending)
+        
+        **Filtering:**
+        - Multiple values per field use OR logic (comma-separated)
+        - Multiple different fields use AND logic
+        - Valid filter fields: `security.ticker`, `portfolio.name`, `blotter.name`, `status.abbreviation`, `orderType.abbreviation`, `orderTimestamp`
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of orders to return
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+          example: 50
+        - name: offset
+          in: query
+          description: Number of orders to skip for pagination
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          example: 0
+        - name: sort
+          in: query
+          description: |
+            Comma-separated list of fields to sort by. 
+            Prefix with `-` for descending order.
+            Valid fields: id, security.ticker, portfolio.name, blotter.name, status.abbreviation, orderType.abbreviation, quantity, orderTimestamp
+          required: false
+          schema:
+            type: string
+          examples:
+            single_field:
+              summary: Sort by single field
+              value: "security.ticker"
+            multiple_fields:
+              summary: Sort by multiple fields
+              value: "-orderTimestamp,security.ticker"
+            mixed_directions:
+              summary: Mixed sort directions
+              value: "portfolio.name,-quantity"
+        - name: security.ticker
+          in: query
+          description: Filter by security ticker (supports multiple comma-separated values)
+          required: false
+          schema:
+            type: string
+          examples:
+            single_value:
+              summary: Single ticker
+              value: "IBM"
+            multiple_values:
+              summary: Multiple tickers
+              value: "IBM,AAPL,MSFT"
+        - name: portfolio.name
+          in: query
+          description: Filter by portfolio name (supports multiple comma-separated values)
+          required: false
+          schema:
+            type: string
+          examples:
+            single_value:
+              summary: Single portfolio
+              value: "Growth Fund"
+            multiple_values:
+              summary: Multiple portfolios
+              value: "Growth Fund,Value Fund"
+        - name: blotter.name
+          in: query
+          description: Filter by blotter name (supports multiple comma-separated values)
+          required: false
+          schema:
+            type: string
+          examples:
+            single_value:
+              summary: Single blotter
+              value: "Default"
+            multiple_values:
+              summary: Multiple blotters
+              value: "Default,Trading Desk A"
+        - name: status.abbreviation
+          in: query
+          description: Filter by status abbreviation (supports multiple comma-separated values)
+          required: false
+          schema:
+            type: string
+          examples:
+            single_value:
+              summary: Single status
+              value: "NEW"
+            multiple_values:
+              summary: Multiple statuses
+              value: "NEW,SENT,FILLED"
+        - name: orderType.abbreviation
+          in: query
+          description: Filter by order type abbreviation (supports multiple comma-separated values)
+          required: false
+          schema:
+            type: string
+          examples:
+            single_value:
+              summary: Single order type
+              value: "BUY"
+            multiple_values:
+              summary: Multiple order types
+              value: "BUY,SELL"
+        - name: orderTimestamp
+          in: query
+          description: Filter by order timestamp (supports multiple comma-separated values)
+          required: false
+          schema:
+            type: string
+            format: date-time
+          examples:
+            single_value:
+              summary: Single timestamp
+              value: "2024-06-01T12:00:00Z"
+            multiple_values:
+              summary: Multiple timestamps
+              value: "2024-06-01T12:00:00Z,2024-06-01T13:00:00Z"
       responses:
         '200':
-          description: List of all orders (with details)
+          description: Paginated list of orders with metadata
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/OrderWithDetailsDTO'
+                $ref: '#/components/schemas/OrderPageResponseDTO'
+              examples:
+                basic_response:
+                  summary: Basic paginated response
+                  value:
+                    content:
+                      - id: 101
+                        blotter:
+                          id: 1
+                          name: "Default"
+                          version: 1
+                        status:
+                          id: 1
+                          abbreviation: "NEW"
+                          description: "New"
+                          version: 1
+                        security:
+                          securityId: "SEC123456789012345678901"
+                          ticker: "IBM"
+                        portfolio:
+                          portfolioId: "PORT123456789012345678"
+                          name: "Growth Fund"
+                        orderType:
+                          id: 2
+                          abbreviation: "BUY"
+                          description: "Buy"
+                          version: 1
+                        quantity: 100.00000000
+                        limitPrice: 50.25000000
+                        orderTimestamp: "2024-06-01T12:00:00Z"
+                        version: 1
+                    pagination:
+                      pageSize: 50
+                      offset: 0
+                      totalElements: 1
+                      hasNext: false
+                      hasPrevious: false
+                filtered_response:
+                  summary: Filtered and sorted response
+                  value:
+                    content:
+                      - id: 102
+                        blotter:
+                          id: 1
+                          name: "Default"
+                          version: 1
+                        status:
+                          id: 1
+                          abbreviation: "NEW"
+                          description: "New"
+                          version: 1
+                        security:
+                          securityId: "SEC987654321098765432109"
+                          ticker: "AAPL"
+                        portfolio:
+                          portfolioId: "PORT987654321098765432"
+                          name: "Tech Fund"
+                        orderType:
+                          id: 2
+                          abbreviation: "BUY"
+                          description: "Buy"
+                          version: 1
+                        quantity: 200.00000000
+                        limitPrice: 150.75000000
+                        orderTimestamp: "2024-06-01T14:00:00Z"
+                        version: 1
+                    pagination:
+                      pageSize: 50
+                      offset: 0
+                      totalElements: 1
+                      hasNext: false
+                      hasPrevious: false
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDTO'
+              examples:
+                invalid_sort_field:
+                  summary: Invalid sort field
+                  value:
+                    message: "Invalid sort fields: [invalidField]. Valid fields are: [id, security.ticker, portfolio.name, blotter.name, status.abbreviation, orderType.abbreviation, quantity, orderTimestamp]"
+                    validSortFields: ["id", "security.ticker", "portfolio.name", "blotter.name", "status.abbreviation", "orderType.abbreviation", "quantity", "orderTimestamp"]
+                invalid_filter_field:
+                  summary: Invalid filter field
+                  value:
+                    message: "Invalid filter fields: [invalidField]. Valid fields are: [security.ticker, portfolio.name, blotter.name, status.abbreviation, orderType.abbreviation, orderTimestamp]"
+                    validFilterFields: ["security.ticker", "portfolio.name", "blotter.name", "status.abbreviation", "orderType.abbreviation", "orderTimestamp"]
+                invalid_limit:
+                  summary: Invalid limit parameter
+                  value:
+                    message: "Limit must be between 1 and 1000"
     post:
       summary: Create orders in batch
       operationId: createOrdersBatch
@@ -840,14 +1065,12 @@ components:
           $ref: '#/components/schemas/BlotterDTO'
         status:
           $ref: '#/components/schemas/StatusDTO'
-        portfolioId:
-          type: string
-          example: 5f47ac10b8e4e53b8cfa9b1a
+        security:
+          $ref: '#/components/schemas/SecurityDTO'
+        portfolio:
+          $ref: '#/components/schemas/PortfolioDTO'
         orderType:
           $ref: '#/components/schemas/OrderTypeDTO'
-        securityId:
-          type: string
-          example: 5f47ac10b8e4e53b8cfa9b1b
         quantity:
           type: number
           format: double
@@ -868,7 +1091,7 @@ components:
         version:
           type: integer
           example: 1
-      required: [id, blotter, status, portfolioId, orderType, securityId, quantity, orderTimestamp, version]
+      required: [id, blotter, status, security, portfolio, orderType, quantity, orderTimestamp, version]
     HealthStatus:
       type: object
       properties:
@@ -939,6 +1162,90 @@ components:
             $ref: '#/components/schemas/OrderPostResponseDTO'
           description: Array of individual order processing results
       required: [status, message, totalReceived, successful, failed, orders]
+    SecurityDTO:
+      type: object
+      description: Security information with ID and ticker
+      properties:
+        securityId:
+          type: string
+          description: Unique security identifier
+          example: "SEC123456789012345678901"
+        ticker:
+          type: string
+          description: Security ticker symbol
+          example: "IBM"
+      required: [securityId, ticker]
+    PortfolioDTO:
+      type: object
+      description: Portfolio information with ID and name
+      properties:
+        portfolioId:
+          type: string
+          description: Unique portfolio identifier
+          example: "PORT123456789012345678"
+        name:
+          type: string
+          description: Portfolio name
+          example: "Growth Fund"
+      required: [portfolioId, name]
+    OrderPageResponseDTO:
+      type: object
+      description: Paginated response containing orders and pagination metadata
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderWithDetailsDTO'
+          description: Array of orders for the current page
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadataDTO'
+      required: [content, pagination]
+    PaginationMetadataDTO:
+      type: object
+      description: Pagination metadata for paginated responses
+      properties:
+        pageSize:
+          type: integer
+          description: Number of items requested per page
+          example: 50
+        offset:
+          type: integer
+          description: Number of items skipped
+          example: 0
+        totalElements:
+          type: integer
+          description: Total number of items available
+          example: 150
+        hasNext:
+          type: boolean
+          description: Whether there are more pages available
+          example: true
+        hasPrevious:
+          type: boolean
+          description: Whether there are previous pages available
+          example: false
+      required: [pageSize, offset, totalElements, hasNext, hasPrevious]
+    ErrorResponseDTO:
+      type: object
+      description: Error response with validation details
+      properties:
+        message:
+          type: string
+          description: Error message
+          example: "Invalid sort fields: [invalidField]. Valid fields are: [id, security.ticker, portfolio.name, blotter.name, status.abbreviation, orderType.abbreviation, quantity, orderTimestamp]"
+        validSortFields:
+          type: array
+          items:
+            type: string
+          description: List of valid sort fields (present for sort validation errors)
+          example: ["id", "security.ticker", "portfolio.name", "blotter.name", "status.abbreviation", "orderType.abbreviation", "quantity", "orderTimestamp"]
+        validFilterFields:
+          type: array
+          items:
+            type: string
+          description: List of valid filter fields (present for filter validation errors)
+          example: ["security.ticker", "portfolio.name", "blotter.name", "status.abbreviation", "orderType.abbreviation", "orderTimestamp"]
+      required: [message]
   responses:
     NotFound:
       description: Resource not found
