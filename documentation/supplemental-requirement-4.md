@@ -44,29 +44,29 @@
   - [x] Implement `getSecurityBySecurityId(String securityId)` method
   - [x] Add proper error handling and timeouts
   - [x] Add logging for service calls
-- [ ] **1.2** Create `PortfolioServiceClient` class  
-  - [ ] Implement `getPortfolioByPortfolioId(String portfolioId)` method
-  - [ ] Add proper error handling and timeouts
-  - [ ] Add logging for service calls
-- [ ] **1.3** Add Caffeine caching dependency
-  - [ ] Add `com.github.ben-manes.caffeine:caffeine:3.1.8` to build.gradle
-  - [ ] Configure Caffeine cache manager in Spring configuration
-- [ ] **1.4** Implement Caffeine caching for Security data
-  - [ ] Create `SecurityCacheService` with Caffeine cache (5-minute TTL)
-  - [ ] Configure cache size and eviction policies
-  - [ ] Add cache hit/miss metrics using Caffeine stats
-  - [ ] Handle cache refresh and async loading
-- [ ] **1.5** Implement Caffeine caching for Portfolio data
-  - [ ] Create `PortfolioCacheService` with Caffeine cache (5-minute TTL)
-  - [ ] Configure cache size and eviction policies
-  - [ ] Add cache hit/miss metrics using Caffeine stats
-  - [ ] Handle cache refresh and async loading
-- [ ] **1.6** Add configuration properties
-  - [ ] Security service URL configuration
-  - [ ] Portfolio service URL configuration
-  - [ ] Caffeine cache TTL configuration (default: 5 minutes)
-  - [ ] Caffeine cache size configuration
-  - [ ] Service timeout configuration
+- [x] **1.2** Create `PortfolioServiceClient` class  
+  - [x] Implement `getPortfolioByPortfolioId(String portfolioId)` method
+  - [x] Add proper error handling and timeouts
+  - [x] Add logging for service calls
+- [x] **1.3** Add Caffeine caching dependency
+  - [x] Add `com.github.ben-manes.caffeine:caffeine:3.1.8` to build.gradle
+  - [x] Configure Caffeine cache manager in Spring configuration
+- [x] **1.4** Implement Caffeine caching for Security data
+  - [x] Create `SecurityCacheService` with Caffeine cache (5-minute TTL)
+  - [x] Configure cache size and eviction policies
+  - [x] Add cache hit/miss metrics using Caffeine stats
+  - [x] Handle cache refresh and async loading
+- [x] **1.5** Implement Caffeine caching for Portfolio data
+  - [x] Create `PortfolioCacheService` with Caffeine cache (5-minute TTL)
+  - [x] Configure cache size and eviction policies
+  - [x] Add cache hit/miss metrics using Caffeine stats
+  - [x] Handle cache refresh and async loading
+- [x] **1.6** Add configuration properties
+  - [x] Security service URL configuration
+  - [x] Portfolio service URL configuration
+  - [x] Caffeine cache TTL configuration (default: 5 minutes)
+  - [x] Caffeine cache size configuration
+  - [x] Service timeout configuration
 
 ### Phase 2: DTO Modifications
 - [ ] **2.1** Create new DTOs

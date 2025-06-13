@@ -1,0 +1,33 @@
+# GlobeCo Order Service Configuration
+
+# External Service URLs
+security:
+  service:
+    url: http://globeco-security-service:8000
+
+portfolio:
+  service:
+    url: http://globeco-portfolio-service:8001
+
+# Cache Configuration
+cache:
+  security:
+    ttl: 300  # 5 minutes in seconds
+    size: 1000  # Maximum number of entries
+  portfolio:
+    ttl: 300  # 5 minutes in seconds
+    size: 1000  # Maximum number of entries
+
+# Service Timeout Configuration (for future use)
+service:
+  timeout:
+    connect: 5000  # 5 seconds in milliseconds
+    read: 30000    # 30 seconds in milliseconds
+
+# Logging Configuration
+logging:
+  level:
+    org.kasbench.globeco_order_service.service.SecurityServiceClient: DEBUG
+    org.kasbench.globeco_order_service.service.PortfolioServiceClient: DEBUG
+    org.kasbench.globeco_order_service.service.SecurityCacheService: DEBUG
+    org.kasbench.globeco_order_service.service.PortfolioCacheService: DEBUG 
