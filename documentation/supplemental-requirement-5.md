@@ -166,16 +166,16 @@ The existing `POST /api/v1/orders/{id}/submit` endpoint will remain unchanged an
   - [ ] Add factory methods for different response scenarios
 
 ### Phase 2: Service Layer Implementation
-- [ ] **2.1** Enhance `OrderService`
-  - [ ] Create `submitOrdersBatch(List<Integer> orderIds)` method
-  - [ ] Implement individual order validation logic
-  - [ ] Implement batch processing with error handling
-  - [ ] Add comprehensive logging for batch operations
-- [ ] **2.2** Trade Service Integration
-  - [ ] Reuse existing Trade Service integration logic
-  - [ ] Consider implementing parallel processing for Trade Service calls
-  - [ ] Add proper error handling for individual Trade Service failures
-  - [ ] Implement timeout and retry logic
+- [x] **2.1** Enhance `OrderService`
+  - [x] Create `submitOrdersBatch(List<Integer> orderIds)` method
+  - [x] Implement individual order validation logic
+  - [x] Implement batch processing with error handling
+  - [x] Add comprehensive logging for batch operations
+- [x] **2.2** Trade Service Integration
+  - [x] Reuse existing Trade Service integration logic
+  - [x] Consider implementing parallel processing for Trade Service calls
+  - [x] Add proper error handling for individual Trade Service failures
+  - [x] Implement timeout and retry logic
 
 ### Phase 3: Controller Implementation  
 - [ ] **3.1** Update `OrderController`

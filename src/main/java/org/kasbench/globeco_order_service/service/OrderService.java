@@ -10,6 +10,9 @@ import org.kasbench.globeco_order_service.dto.StatusDTO;
 import org.kasbench.globeco_order_service.dto.OrderTypeDTO;
 import org.kasbench.globeco_order_service.dto.OrderListResponseDTO;
 import org.kasbench.globeco_order_service.dto.OrderPostResponseDTO;
+import org.kasbench.globeco_order_service.dto.BatchSubmitRequestDTO;
+import org.kasbench.globeco_order_service.dto.BatchSubmitResponseDTO;
+import org.kasbench.globeco_order_service.dto.OrderSubmitResultDTO;
 import org.kasbench.globeco_order_service.repository.OrderRepository;
 import org.kasbench.globeco_order_service.repository.StatusRepository;
 import org.kasbench.globeco_order_service.repository.BlotterRepository;
@@ -30,6 +33,10 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Optional;
 import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.IntStream;
 import org.kasbench.globeco_order_service.service.SecurityCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioCacheService;
 import org.kasbench.globeco_order_service.dto.SecurityDTO;
@@ -45,6 +52,7 @@ import java.util.Map;
 public class OrderService {
     private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
     private static final int MAX_BATCH_SIZE = 1000;
+    private static final int MAX_SUBMIT_BATCH_SIZE = 100;
     
     private final OrderRepository orderRepository;
     private final StatusRepository statusRepository;
@@ -128,6 +136,225 @@ public class OrderService {
         System.out.println("DEBUG: about to save order: " + updatedOrder);
         Order savedOrder = orderRepository.save(updatedOrder);
         return toOrderDTO(savedOrder);
+    }
+
+    /**
+     * Submit multiple orders in batch to the trade service.
+     * Processes orders individually (non-atomic batch) and continues processing
+     * even if some orders fail.
+     * 
+     * @param orderIds List of order IDs to submit
+     * @return BatchSubmitResponseDTO containing results for each order
+     */
+    @Transactional
+    public BatchSubmitResponseDTO submitOrdersBatch(List<Integer> orderIds) {
+        logger.info("Starting batch order submission for {} orders", orderIds.size());
+        
+        // Validate batch size
+        if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
+            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d", 
+                    orderIds.size(), MAX_SUBMIT_BATCH_SIZE);
+            logger.warn("Batch submission rejected: {}", errorMessage);
+            return BatchSubmitResponseDTO.validationFailure(errorMessage);
+        }
+
+        List<OrderSubmitResultDTO> results = new ArrayList<>();
+        
+        // Process each order individually
+        for (int i = 0; i < orderIds.size(); i++) {
+            Integer orderId = orderIds.get(i);
+            logger.debug("Processing order {} (index {}) in batch", orderId, i);
+            
+            OrderSubmitResultDTO result = submitIndividualOrder(orderId, i);
+            results.add(result);
+            
+            logger.debug("Order {} processed with status: {}", orderId, result.getStatus());
+        }
+        
+        // Create response based on results
+        BatchSubmitResponseDTO response = BatchSubmitResponseDTO.fromResults(results);
+        
+        logger.info("Batch submission completed: {} successful, {} failed out of {} total",
+                response.getSuccessful(), response.getFailed(), response.getTotalRequested());
+        
+        return response;
+    }
+
+    /**
+     * Submit multiple orders in batch to the trade service with parallel processing.
+     * This is an enhanced version that processes orders in parallel for better performance.
+     * Trade service calls are made concurrently while maintaining individual error handling.
+     * 
+     * @param orderIds List of order IDs to submit
+     * @return BatchSubmitResponseDTO containing results for each order
+     */
+    @Transactional
+    public BatchSubmitResponseDTO submitOrdersBatchParallel(List<Integer> orderIds) {
+        logger.info("Starting parallel batch order submission for {} orders", orderIds.size());
+        
+        // Validate batch size
+        if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
+            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d", 
+                    orderIds.size(), MAX_SUBMIT_BATCH_SIZE);
+            logger.warn("Parallel batch submission rejected: {}", errorMessage);
+            return BatchSubmitResponseDTO.validationFailure(errorMessage);
+        }
+
+        // Create thread pool for parallel processing
+        ExecutorService executor = Executors.newFixedThreadPool(Math.min(orderIds.size(), 10));
+        
+        try {
+            // Create CompletableFuture for each order
+            List<CompletableFuture<OrderSubmitResultDTO>> futures = IntStream.range(0, orderIds.size())
+                    .mapToObj(i -> CompletableFuture.supplyAsync(() -> 
+                            submitIndividualOrder(orderIds.get(i), i), executor))
+                    .toList();
+            
+            // Wait for all futures to complete and collect results
+            List<OrderSubmitResultDTO> results = futures.stream()
+                    .map(CompletableFuture::join)
+                    .toList();
+            
+            // Create response based on results
+            BatchSubmitResponseDTO response = BatchSubmitResponseDTO.fromResults(results);
+            
+            logger.info("Parallel batch submission completed: {} successful, {} failed out of {} total",
+                    response.getSuccessful(), response.getFailed(), response.getTotalRequested());
+            
+            return response;
+            
+        } finally {
+            executor.shutdown();
+        }
+    }
+
+    /**
+     * Submit a single order as part of batch processing.
+     * This method handles individual order validation, trade service calls,
+     * and error handling for batch operations.
+     * 
+     * @param orderId The ID of the order to submit
+     * @param requestIndex The index of this order in the batch request
+     * @return OrderSubmitResultDTO containing the result of the submission
+     */
+    private OrderSubmitResultDTO submitIndividualOrder(Integer orderId, Integer requestIndex) {
+        try {
+            // Validate order exists
+            Optional<Order> orderOpt = orderRepository.findById(orderId);
+            if (orderOpt.isEmpty()) {
+                logger.debug("Order {} not found during batch submission", orderId);
+                return OrderSubmitResultDTO.failure(orderId, "Order not found", requestIndex);
+            }
+            
+            Order order = orderOpt.get();
+            
+            // Validate order is in NEW status
+            if (!order.getStatus().getAbbreviation().equals("NEW")) {
+                String errorMessage = String.format("Order is not in NEW status (current: %s)", 
+                        order.getStatus().getAbbreviation());
+                logger.debug("Order {} cannot be submitted: {}", orderId, errorMessage);
+                return OrderSubmitResultDTO.failure(orderId, errorMessage, requestIndex);
+            }
+            
+            // Call trade service
+            Integer tradeOrderId = callTradeService(order);
+            if (tradeOrderId == null) {
+                logger.warn("Trade service call failed for order {}", orderId);
+                return OrderSubmitResultDTO.failure(orderId, "Trade service submission failed", requestIndex);
+            }
+            
+            // Update order status and tradeOrderId
+            updateOrderAfterSubmission(order, tradeOrderId);
+            
+            logger.debug("Order {} successfully submitted with tradeOrderId {}", orderId, tradeOrderId);
+            return OrderSubmitResultDTO.success(orderId, tradeOrderId, requestIndex);
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error submitting order {} in batch: {}", orderId, e.getMessage(), e);
+            return OrderSubmitResultDTO.failure(orderId, 
+                    "Internal error during submission: " + e.getMessage(), requestIndex);
+        }
+    }
+
+    /**
+     * Call the trade service to submit an order.
+     * Reuses the existing trade service integration logic.
+     * 
+     * @param order The order to submit to the trade service
+     * @return The trade order ID if successful, null if failed
+     */
+    private Integer callTradeService(Order order) {
+        try {
+            TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
+                    .orderId(order.getId())
+                    .portfolioId(order.getPortfolioId())
+                    .orderType(order.getOrderType().getAbbreviation())
+                    .securityId(order.getSecurityId())
+                    .quantity(order.getQuantity())
+                    .limitPrice(order.getLimitPrice())
+                    .build();
+            
+            logger.debug("Calling trade service for order {}", order.getId());
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "http://globeco-trade-service:8082/api/v1/tradeOrders",
+                    new HttpEntity<>(tradeOrder),
+                    String.class
+            );
+            
+            if (response.getStatusCode() == HttpStatus.CREATED) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode node = mapper.readTree(response.getBody());
+                    if (node.has("id") && node.get("id").isInt()) {
+                        Integer tradeOrderId = node.get("id").asInt();
+                        logger.debug("Trade service returned tradeOrderId {} for order {}", 
+                                tradeOrderId, order.getId());
+                        return tradeOrderId;
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to parse trade service response for order {}: {}", 
+                            order.getId(), e.getMessage());
+                }
+            } else {
+                logger.warn("Trade service returned non-success status {} for order {}", 
+                        response.getStatusCode(), order.getId());
+            }
+        } catch (Exception e) {
+            logger.error("Trade service call failed for order {}: {}", order.getId(), e.getMessage());
+        }
+        
+        return null;
+    }
+
+    /**
+     * Update order status to SENT and set tradeOrderId after successful trade service submission.
+     * 
+     * @param order The order to update
+     * @param tradeOrderId The trade order ID returned from the trade service
+     */
+    private void updateOrderAfterSubmission(Order order, Integer tradeOrderId) {
+        Status sentStatus = statusRepository.findAll().stream()
+                .filter(s -> "SENT".equals(s.getAbbreviation()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("SENT status not found"));
+        
+        Order updatedOrder = Order.builder()
+                .id(order.getId())
+                .blotter(order.getBlotter())
+                .status(sentStatus)
+                .portfolioId(order.getPortfolioId())
+                .orderType(order.getOrderType())
+                .securityId(order.getSecurityId())
+                .quantity(order.getQuantity())
+                .limitPrice(order.getLimitPrice())
+                .tradeOrderId(tradeOrderId)
+                .orderTimestamp(order.getOrderTimestamp())
+                .version(order.getVersion())
+                .build();
+        
+        orderRepository.save(updatedOrder);
+        logger.debug("Updated order {} with tradeOrderId {} and SENT status", 
+                order.getId(), tradeOrderId);
     }
 
     // Complete mapping from Order to OrderWithDetailsDTO
