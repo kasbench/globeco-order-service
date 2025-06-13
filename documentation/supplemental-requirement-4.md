@@ -82,21 +82,21 @@
   - [x] Handle cases where external services are unavailable
 
 ### Phase 3: Repository & Database Enhancements
-- [ ] **3.1** Enhance `OrderRepository` for paging
-  - [ ] Add `Pageable` parameter support to existing methods
-  - [ ] Create `findAllWithPaging(Pageable pageable)` method
-  - [ ] Test pagination with various limit/offset combinations
-- [ ] **3.2** Implement dynamic sorting
-  - [ ] Create `SortingSpecification` utility class
-  - [ ] Map sort field names to entity properties
-  - [ ] Handle nested field sorting (security.ticker, portfolio.name, etc.)
-  - [ ] Implement multi-field sorting with direction support
-- [ ] **3.3** Implement dynamic filtering
-  - [ ] Create `FilteringSpecification` utility class
-  - [ ] Implement field-specific filtering logic
-  - [ ] Support multiple values per filter (OR logic)
-  - [ ] Support multiple filters (AND logic)
-  - [ ] Handle nested field filtering
+- [x] **3.1** Enhance `OrderRepository` for paging
+  - [x] Add `Pageable` parameter support to existing methods
+  - [x] Create `findAllWithPaging(Pageable pageable)` method
+  - [x] Test pagination with various limit/offset combinations
+- [x] **3.2** Implement dynamic sorting
+  - [x] Create `SortingSpecification` utility class
+  - [x] Map sort field names to entity properties
+  - [x] Handle nested field sorting (security.ticker, portfolio.name, etc.)
+  - [x] Implement multi-field sorting with direction support
+- [x] **3.3** Implement dynamic filtering
+  - [x] Create `FilteringSpecification` utility class
+  - [x] Implement field-specific filtering logic
+  - [x] Support multiple values per filter (OR logic)
+  - [x] Support multiple filters (AND logic)
+  - [x] Handle nested field filtering
 
 ### Phase 4: Controller Updates
 - [ ] **4.1** Update `OrderController.getAllOrders()` method
