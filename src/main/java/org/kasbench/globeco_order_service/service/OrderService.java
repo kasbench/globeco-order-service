@@ -30,6 +30,10 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Optional;
 import java.util.ArrayList;
+import org.kasbench.globeco_order_service.service.SecurityCacheService;
+import org.kasbench.globeco_order_service.service.PortfolioCacheService;
+import org.kasbench.globeco_order_service.dto.SecurityDTO;
+import org.kasbench.globeco_order_service.dto.PortfolioDTO;
 
 @Service
 public class OrderService {
@@ -41,19 +45,25 @@ public class OrderService {
     private final BlotterRepository blotterRepository;
     private final OrderTypeRepository orderTypeRepository;
     private final RestTemplate restTemplate;
+    private final SecurityCacheService securityCacheService;
+    private final PortfolioCacheService portfolioCacheService;
 
     public OrderService(
         OrderRepository orderRepository,
         StatusRepository statusRepository,
         BlotterRepository blotterRepository,
         OrderTypeRepository orderTypeRepository,
-        RestTemplate restTemplate
+        RestTemplate restTemplate,
+        SecurityCacheService securityCacheService,
+        PortfolioCacheService portfolioCacheService
     ) {
         this.orderRepository = orderRepository;
         this.statusRepository = statusRepository;
         this.blotterRepository = blotterRepository;
         this.orderTypeRepository = orderTypeRepository;
         this.restTemplate = restTemplate;
+        this.securityCacheService = securityCacheService;
+        this.portfolioCacheService = portfolioCacheService;
     }
 
     @Transactional
@@ -118,13 +128,59 @@ public class OrderService {
     private OrderWithDetailsDTO toDto(Order order) {
         if (order == null) return null;
         
+        // Fetch security information from cache
+        SecurityDTO security = null;
+        if (order.getSecurityId() != null) {
+            try {
+                security = securityCacheService.getSecurityBySecurityId(order.getSecurityId());
+                if (security == null) {
+                    // Create a fallback SecurityDTO with just the ID if service is unavailable
+                    security = SecurityDTO.builder()
+                            .securityId(order.getSecurityId())
+                            .ticker(null)  // Will be null if service is unavailable
+                            .build();
+                    logger.debug("Security service unavailable for securityId: {}, using fallback", order.getSecurityId());
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to fetch security data for securityId: {} - {}", order.getSecurityId(), e.getMessage());
+                // Create fallback SecurityDTO
+                security = SecurityDTO.builder()
+                        .securityId(order.getSecurityId())
+                        .ticker(null)
+                        .build();
+            }
+        }
+        
+        // Fetch portfolio information from cache
+        PortfolioDTO portfolio = null;
+        if (order.getPortfolioId() != null) {
+            try {
+                portfolio = portfolioCacheService.getPortfolioByPortfolioId(order.getPortfolioId());
+                if (portfolio == null) {
+                    // Create a fallback PortfolioDTO with just the ID if service is unavailable
+                    portfolio = PortfolioDTO.builder()
+                            .portfolioId(order.getPortfolioId())
+                            .name(null)  // Will be null if service is unavailable
+                            .build();
+                    logger.debug("Portfolio service unavailable for portfolioId: {}, using fallback", order.getPortfolioId());
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to fetch portfolio data for portfolioId: {} - {}", order.getPortfolioId(), e.getMessage());
+                // Create fallback PortfolioDTO
+                portfolio = PortfolioDTO.builder()
+                        .portfolioId(order.getPortfolioId())
+                        .name(null)
+                        .build();
+            }
+        }
+        
         return OrderWithDetailsDTO.builder()
                 .id(order.getId())
                 .blotter(toBlotterDTO(order.getBlotter()))
                 .status(toStatusDTO(order.getStatus()))
-                .portfolioId(order.getPortfolioId())
+                .portfolio(portfolio)
                 .orderType(toOrderTypeDTO(order.getOrderType()))
-                .securityId(order.getSecurityId())
+                .security(security)
                 .quantity(order.getQuantity())
                 .limitPrice(order.getLimitPrice())
                 .tradeOrderId(order.getTradeOrderId())

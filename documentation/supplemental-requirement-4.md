@@ -69,17 +69,17 @@
   - [x] Service timeout configuration
 
 ### Phase 2: DTO Modifications
-- [ ] **2.1** Create new DTOs
-  - [ ] Create `SecurityDTO` class with `securityId` and `ticker` fields
-  - [ ] Create `PortfolioDTO` class with `portfolioId` and `name` fields
-- [ ] **2.2** Update `OrderWithDetailsDTO`
-  - [ ] Replace `String securityId` with `SecurityDTO security`
-  - [ ] Replace `String portfolioId` with `PortfolioDTO portfolio`
-  - [ ] Update builder patterns and constructors
-- [ ] **2.3** Update mapping methods in `OrderService`
-  - [ ] Modify `toDto()` method to populate security and portfolio objects
-  - [ ] Add service calls to fetch security and portfolio data
-  - [ ] Handle cases where external services are unavailable
+- [x] **2.1** Create new DTOs
+  - [x] Create `SecurityDTO` class with `securityId` and `ticker` fields
+  - [x] Create `PortfolioDTO` class with `portfolioId` and `name` fields
+- [x] **2.2** Update `OrderWithDetailsDTO`
+  - [x] Replace `String securityId` with `SecurityDTO security`
+  - [x] Replace `String portfolioId` with `PortfolioDTO portfolio`
+  - [x] Update builder patterns and constructors
+- [x] **2.3** Update mapping methods in `OrderService`
+  - [x] Modify `toDto()` method to populate security and portfolio objects
+  - [x] Add service calls to fetch security and portfolio data
+  - [x] Handle cases where external services are unavailable
 
 ### Phase 3: Repository & Database Enhancements
 - [ ] **3.1** Enhance `OrderRepository` for paging

@@ -15,9 +15,9 @@ public class OrderWithDetailsDTO {
     private Integer id;
     private BlotterDTO blotter;
     private StatusDTO status;
-    private String portfolioId;
+    private PortfolioDTO portfolio;
     private OrderTypeDTO orderType;
-    private String securityId;
+    private SecurityDTO security;
     private BigDecimal quantity;
     private BigDecimal limitPrice;
     private Integer tradeOrderId;
