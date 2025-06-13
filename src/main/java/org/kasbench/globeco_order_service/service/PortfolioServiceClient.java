@@ -23,7 +23,7 @@ public class PortfolioServiceClient {
     
     public PortfolioServiceClient(
             RestTemplate restTemplate,
-            @Value("${portfolio.service.url:http://globeco-portfolio-service:8001}") String portfolioServiceUrl
+            @Value("${portfolio.service.url:http://globeco-portfolio-service:8000}") String portfolioServiceUrl
     ) {
         this.restTemplate = restTemplate;
         this.portfolioServiceUrl = portfolioServiceUrl;

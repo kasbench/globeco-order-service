@@ -7,6 +7,9 @@
 # ---- Runtime stage ----
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
+# Install curl and ping utilities
+RUN apk add --no-cache curl iputils
+
 # Set the working directory
 WORKDIR /app
 

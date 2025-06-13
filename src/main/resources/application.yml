@@ -7,7 +7,7 @@ security:
 
 portfolio:
   service:
-    url: http://globeco-portfolio-service:8001
+    url: http://globeco-portfolio-service:8000
 
 # Cache Configuration
 cache:
