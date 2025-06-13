@@ -26,6 +26,7 @@ This document provides complete instructions for interacting with the GlobeCo Or
 | PUT | `/order/{id}` | Update order |
 | DELETE | `/order/{id}?version={version}` | Delete order |
 | POST | `/orders/{id}/submit` | Submit order to trade service |
+| POST | `/orders/batch/submit` | Submit multiple orders in batch |
 
 ### **Statuses**
 | Method | Path | Description |
@@ -131,6 +132,347 @@ GET /api/v1/orders?invalidField=value
 # Invalid limit
 GET /api/v1/orders?limit=2000
 # Returns 400: Limit must be between 1 and 1000
+```
+
+---
+
+## **🚀 Batch Order Submission**
+
+### **Overview**
+The batch order submission feature allows submitting multiple orders to the trade service in a single request, significantly improving performance for high-volume order processing.
+
+**Endpoint:** `POST /api/v1/orders/batch/submit`
+
+**Key Features:**
+- **Non-atomic Processing**: Individual order failures don't affect other orders
+- **Batch Size Limits**: 1-100 orders per batch
+- **Individual Results**: Detailed success/failure status for each order
+- **Performance Optimized**: Single request for multiple order submissions
+
+### **Request Format**
+
+#### **BatchSubmitRequestDTO**
+```json
+{
+  "orderIds": [1, 2, 3, 4, 5]
+}
+```
+
+**Field Validation:**
+- `orderIds`: Required array of integers
+  - Minimum length: 1 order
+  - Maximum length: 100 orders
+  - No null values allowed
+  - Each order must exist and be in "NEW" status
+
+### **Response Format**
+
+#### **BatchSubmitResponseDTO**
+```json
+{
+  "status": "SUCCESS",
+  "message": "All 3 orders submitted successfully",
+  "totalRequested": 3,
+  "successful": 3,
+  "failed": 0,
+  "results": [
+    {
+      "orderId": 1,
+      "status": "SUCCESS",
+      "message": "Order submitted successfully",
+      "tradeOrderId": 12345,
+      "requestIndex": 0
+    },
+    {
+      "orderId": 2,
+      "status": "SUCCESS",
+      "message": "Order submitted successfully",
+      "tradeOrderId": 12346,
+      "requestIndex": 1
+    },
+    {
+      "orderId": 3,
+      "status": "SUCCESS",
+      "message": "Order submitted successfully",
+      "tradeOrderId": 12347,
+      "requestIndex": 2
+    }
+  ]
+}
+```
+
+### **HTTP Status Code Mapping**
+
+| Status Code | Description | Use Case |
+|-------------|-------------|----------|
+| **200** | All orders submitted successfully | Complete success |
+| **207** | Partial success or all orders failed during processing | Mixed results or processing failures |
+| **400** | Request validation failed | Invalid JSON, empty batch, null values |
+| **413** | Batch size exceeds maximum | More than 100 orders requested |
+| **500** | Unexpected server error | Database issues, service unavailable |
+
+### **Complete Examples**
+
+#### **1. All Orders Successful (HTTP 200)**
+```bash
+curl -X POST http://localhost:8081/api/v1/orders/batch/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderIds": [1, 2, 3]
+  }'
+```
+
+**Response:**
+```json
+{
+  "status": "SUCCESS",
+  "message": "All 3 orders submitted successfully",
+  "totalRequested": 3,
+  "successful": 3,
+  "failed": 0,
+  "results": [
+    {
+      "orderId": 1,
+      "status": "SUCCESS",
+      "message": "Order submitted successfully",
+      "tradeOrderId": 12345,
+      "requestIndex": 0
+    },
+    {
+      "orderId": 2,
+      "status": "SUCCESS", 
+      "message": "Order submitted successfully",
+      "tradeOrderId": 12346,
+      "requestIndex": 1
+    },
+    {
+      "orderId": 3,
+      "status": "SUCCESS",
+      "message": "Order submitted successfully", 
+      "tradeOrderId": 12347,
+      "requestIndex": 2
+    }
+  ]
+}
+```
+
+#### **2. Partial Success (HTTP 207)**
+```bash
+curl -X POST http://localhost:8081/api/v1/orders/batch/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderIds": [1, 999, 3]
+  }'
+```
+
+**Response:**
+```json
+{
+  "status": "PARTIAL",
+  "message": "2 of 3 orders submitted successfully, 1 failed",
+  "totalRequested": 3,
+  "successful": 2,
+  "failed": 1,
+  "results": [
+    {
+      "orderId": 1,
+      "status": "SUCCESS",
+      "message": "Order submitted successfully",
+      "tradeOrderId": 12345,
+      "requestIndex": 0
+    },
+    {
+      "orderId": 999,
+      "status": "FAILURE",
+      "message": "Order not found",
+      "tradeOrderId": null,
+      "requestIndex": 1
+    },
+    {
+      "orderId": 3,
+      "status": "SUCCESS",
+      "message": "Order submitted successfully",
+      "tradeOrderId": 12347,
+      "requestIndex": 2
+    }
+  ]
+}
+```
+
+#### **3. Request Validation Error (HTTP 400)**
+```bash
+curl -X POST http://localhost:8081/api/v1/orders/batch/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderIds": []
+  }'
+```
+
+**Response:**
+```json
+{
+  "status": "FAILURE",
+  "message": "Order IDs list cannot be empty",
+  "totalRequested": 0,
+  "successful": 0,
+  "failed": 0,
+  "results": []
+}
+```
+
+#### **4. Batch Size Exceeded (HTTP 413)**
+```bash
+curl -X POST http://localhost:8081/api/v1/orders/batch/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderIds": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101]
+  }'
+```
+
+**Response:**
+```json
+{
+  "status": "FAILURE",
+  "message": "Batch size 101 exceeds maximum allowed size of 100",
+  "totalRequested": 0,
+  "successful": 0,
+  "failed": 0,
+  "results": []
+}
+```
+
+### **Common Failure Scenarios**
+- **Order Not Found**: Order ID doesn't exist in database
+- **Invalid Status**: Order is not in "NEW" status (already submitted/filled)
+- **Trade Service Failure**: Trade service unavailable or returns error
+- **Data Validation**: Invalid order data prevents submission
+
+### **Performance Recommendations**
+
+#### **Optimal Batch Sizes**
+- **Small Batches (1-10 orders)**: Best for immediate processing and low latency
+- **Medium Batches (11-50 orders)**: Balanced performance and error handling
+- **Large Batches (51-100 orders)**: Maximum throughput, but increased risk of partial failures
+
+#### **Error Handling Strategy**
+```python
+def submit_orders_batch(order_ids, max_retries=3):
+    """Submit orders with retry logic for failed orders"""
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                'http://localhost:8081/api/v1/orders/batch/submit',
+                json={'orderIds': order_ids},
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            if response.status_code == 200:
+                print(f"All {len(order_ids)} orders submitted successfully")
+                return response.json()
+            
+            elif response.status_code == 207:
+                result = response.json()
+                print(f"Partial success: {result['successful']} succeeded, {result['failed']} failed")
+                
+                # Extract failed order IDs for retry
+                failed_orders = [
+                    r['orderId'] for r in result['results'] 
+                    if r['status'] == 'FAILURE' and 'not found' not in r['message'].lower()
+                ]
+                
+                if failed_orders and attempt < max_retries - 1:
+                    print(f"Retrying {len(failed_orders)} failed orders...")
+                    order_ids = failed_orders
+                    continue
+                    
+                return result
+                
+            elif response.status_code in [400, 413]:
+                print(f"Request validation error: {response.json()['message']}")
+                return response.json()
+                
+            else:
+                print(f"Server error (HTTP {response.status_code})")
+                if attempt < max_retries - 1:
+                    print(f"Retrying in {2 ** attempt} seconds...")
+                    time.sleep(2 ** attempt)
+                    continue
+                raise Exception(f"Failed after {max_retries} attempts")
+                
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1:
+                print(f"Network error: {e}. Retrying...")
+                time.sleep(2 ** attempt)
+                continue
+            raise
+```
+
+### **Integration Patterns**
+
+#### **1. Sequential Batch Processing**
+```javascript
+async function processBatchesSequentially(allOrderIds, batchSize = 50) {
+    const results = [];
+    
+    for (let i = 0; i < allOrderIds.length; i += batchSize) {
+        const batch = allOrderIds.slice(i, i + batchSize);
+        
+        try {
+            const response = await fetch('/api/v1/orders/batch/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderIds: batch })
+            });
+            
+            const result = await response.json();
+            results.push(result);
+            
+            console.log(`Batch ${Math.floor(i/batchSize) + 1}: ${result.successful} successful, ${result.failed} failed`);
+            
+        } catch (error) {
+            console.error(`Batch ${Math.floor(i/batchSize) + 1} failed:`, error);
+            results.push({ error: error.message, batch: batch });
+        }
+    }
+    
+    return results;
+}
+```
+
+#### **2. Parallel Batch Processing**
+```javascript
+async function processBatchesParallel(allOrderIds, batchSize = 25, maxConcurrency = 4) {
+    const batches = [];
+    for (let i = 0; i < allOrderIds.length; i += batchSize) {
+        batches.push(allOrderIds.slice(i, i + batchSize));
+    }
+    
+    const results = [];
+    for (let i = 0; i < batches.length; i += maxConcurrency) {
+        const concurrentBatches = batches.slice(i, i + maxConcurrency);
+        
+        const promises = concurrentBatches.map(async (batch, index) => {
+            try {
+                const response = await fetch('/api/v1/orders/batch/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ orderIds: batch })
+                });
+                
+                return await response.json();
+            } catch (error) {
+                console.error(`Batch ${i + index + 1} failed:`, error);
+                return { error: error.message, batch: batch };
+            }
+        });
+        
+        const batchResults = await Promise.all(promises);
+        results.push(...batchResults);
+    }
+    
+    return results;
+}
 ```
 
 ---
@@ -923,6 +1265,22 @@ def create_orders():
             print(f"Response: {e.response.text}")
         raise
 
+# Submit orders in batch
+def submit_orders_batch(order_ids):
+    try:
+        response = requests.post(
+            'http://localhost:8081/api/v1/orders/batch/submit',
+            json={'orderIds': order_ids},
+            headers={'Content-Type': 'application/json'}
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error submitting orders batch: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response: {e.response.text}")
+        raise
+
 # Get all statuses
 def get_all_statuses():
     try:
@@ -959,6 +1317,13 @@ curl -X GET http://localhost:8081/api/v1/orders
 # Get order by ID
 curl -X GET http://localhost:8081/api/v1/order/101
 
+# Submit orders in batch
+curl -X POST http://localhost:8081/api/v1/orders/batch/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderIds": [1, 2, 3, 4, 5]
+  }'
+
 # Delete order
 curl -X DELETE "http://localhost:8081/api/v1/order/101?version=1"
 
@@ -977,10 +1342,11 @@ curl -X POST http://localhost:8081/api/v1/statuses \
 ## **📚 Best Practices**
 
 ### **1. Batch Processing**
-- Use batch processing for high-volume order creation
-- Maximum 1000 orders per batch
-- Handle partial failures gracefully
+- **Order Creation**: Use batch processing for high-volume order creation (max 1000 orders per batch)
+- **Order Submission**: Use batch submission for submitting multiple orders to trade service (max 100 orders per batch)  
+- Handle partial failures gracefully for both creation and submission
 - Check individual order results in response
+- Consider optimal batch sizes based on use case (small: 1-10, medium: 11-50, large: 51-100 for submission)
 
 ### **2. Error Handling**
 - Always check HTTP status codes
@@ -1000,10 +1366,16 @@ curl -X POST http://localhost:8081/api/v1/statuses \
 - Validate decimal precision for monetary values
 
 ### **5. Performance**
-- Use batch operations when possible
+- **Batch Operations**: Use batch operations when possible
+  - Order creation: Up to 1000 orders per batch for maximum efficiency
+  - Order submission: Up to 100 orders per batch, consider 25-50 for balanced performance
+- **Sequential vs Parallel**: Choose processing strategy based on requirements
+  - Sequential: Better error handling, easier debugging
+  - Parallel: Higher throughput, but requires careful concurrency management  
 - Cache reference data (statuses, order types, blotters)
 - Implement pagination for large result sets
 - Use appropriate timeouts for HTTP requests
+- Consider retry logic for transient failures, especially for batch submissions
 
 ---
 

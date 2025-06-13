@@ -889,6 +889,185 @@ paths:
                   status:
                     type: string
                     example: not submitted
+  /api/v1/orders/batch/submit:
+    post:
+      summary: Submit multiple orders in batch to the trade service
+      operationId: submitOrdersBatch
+      tags: [Order]
+      description: |
+        Submit multiple orders to the GlobeCo Trade Service in a single batch request.
+        Processes orders individually (non-atomic batch) and continues processing even if some orders fail.
+        
+        **Processing Strategy:**
+        - Each order must exist in the database and be in "NEW" status
+        - Orders are processed individually - failure of one order doesn't affect others
+        - Each order's submission to the trade service is independent
+        
+        **HTTP Status Codes:**
+        - `200` - All orders submitted successfully
+        - `207` - Partial success (some orders succeeded, others failed) or all orders failed during processing
+        - `400` - Request validation failed (invalid JSON, missing orderIds, empty batch, null values)
+        - `413` - Batch size exceeds maximum allowed (100 orders)
+        - `500` - Unexpected server error
+        
+        **Batch Size Limits:**
+        - Minimum: 1 order
+        - Maximum: 100 orders per batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchSubmitRequestDTO'
+            examples:
+              small_batch:
+                summary: Small batch (3 orders)
+                value:
+                  orderIds: [1, 2, 3]
+              large_batch:
+                summary: Large batch (10 orders)
+                value:
+                  orderIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+              max_batch:
+                summary: Maximum batch size (100 orders)
+                value:
+                  orderIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100]
+      responses:
+        '200':
+          description: All orders submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSubmitResponseDTO'
+              example:
+                status: "SUCCESS"
+                message: "All 3 orders submitted successfully"
+                totalRequested: 3
+                successful: 3
+                failed: 0
+                results:
+                  - orderId: 1
+                    status: "SUCCESS"
+                    message: "Order submitted successfully"
+                    tradeOrderId: 12345
+                    requestIndex: 0
+                  - orderId: 2
+                    status: "SUCCESS"
+                    message: "Order submitted successfully"
+                    tradeOrderId: 12346
+                    requestIndex: 1
+                  - orderId: 3
+                    status: "SUCCESS"
+                    message: "Order submitted successfully"
+                    tradeOrderId: 12347
+                    requestIndex: 2
+        '207':
+          description: Partial success or all orders failed during processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSubmitResponseDTO'
+              examples:
+                partial_success:
+                  summary: Partial success (some orders succeeded, others failed)
+                  value:
+                    status: "PARTIAL"
+                    message: "2 of 3 orders submitted successfully, 1 failed"
+                    totalRequested: 3
+                    successful: 2
+                    failed: 1
+                    results:
+                      - orderId: 1
+                        status: "SUCCESS"
+                        message: "Order submitted successfully"
+                        tradeOrderId: 12345
+                        requestIndex: 0
+                      - orderId: 2
+                        status: "FAILURE"
+                        message: "Order not in NEW status"
+                        requestIndex: 1
+                      - orderId: 3
+                        status: "SUCCESS"
+                        message: "Order submitted successfully"
+                        tradeOrderId: 12347
+                        requestIndex: 2
+                all_failed_processing:
+                  summary: All orders failed during processing
+                  value:
+                    status: "FAILURE"
+                    message: "All orders failed to submit"
+                    totalRequested: 2
+                    successful: 0
+                    failed: 2
+                    results:
+                      - orderId: 999
+                        status: "FAILURE"
+                        message: "Order not found"
+                        requestIndex: 0
+                      - orderId: 998
+                        status: "FAILURE"
+                        message: "Order not in NEW status"
+                        requestIndex: 1
+        '400':
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSubmitResponseDTO'
+              examples:
+                null_request:
+                  summary: Null request body
+                  value:
+                    status: "FAILURE"
+                    message: "Request body is required and must contain orderIds array"
+                    totalRequested: 0
+                    successful: 0
+                    failed: 0
+                    results: []
+                empty_batch:
+                  summary: Empty order IDs list
+                  value:
+                    status: "FAILURE"
+                    message: "Order IDs list cannot be empty"
+                    totalRequested: 0
+                    successful: 0
+                    failed: 0
+                    results: []
+                null_order_ids:
+                  summary: Null values in order IDs
+                  value:
+                    status: "FAILURE"
+                    message: "Order IDs cannot contain null values"
+                    totalRequested: 0
+                    successful: 0
+                    failed: 0
+                    results: []
+        '413':
+          description: Batch size exceeds maximum allowed (100 orders)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSubmitResponseDTO'
+              example:
+                status: "FAILURE"
+                message: "Batch size 101 exceeds maximum allowed size of 100"
+                totalRequested: 0
+                successful: 0
+                failed: 0
+                results: []
+        '500':
+          description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSubmitResponseDTO'
+              example:
+                status: "FAILURE"
+                message: "Internal server error processing batch submission request: Database connection failed"
+                totalRequested: 0
+                successful: 0
+                failed: 0
+                results: []
 components:
   schemas:
     StatusDTO:
@@ -1246,6 +1425,88 @@ components:
           description: List of valid filter fields (present for filter validation errors)
           example: ["security.ticker", "portfolio.name", "blotter.name", "status.abbreviation", "orderType.abbreviation", "orderTimestamp"]
       required: [message]
+    BatchSubmitRequestDTO:
+      type: object
+      description: Request DTO for batch order submission containing order IDs to submit
+      properties:
+        orderIds:
+          type: array
+          items:
+            type: integer
+          description: |
+            Array of order IDs to submit to the trade service.
+            Each order must exist in the database and be in "NEW" status.
+          minItems: 1
+          maxItems: 100
+          example: [1, 2, 3]
+      required: [orderIds]
+    BatchSubmitResponseDTO:
+      type: object
+      description: Response DTO for batch order submission operations
+      properties:
+        status:
+          type: string
+          enum: [SUCCESS, PARTIAL, FAILURE]
+          description: |
+            Overall status of the batch submission:
+            - SUCCESS: All orders submitted successfully
+            - PARTIAL: Some orders succeeded, some failed
+            - FAILURE: All orders failed or validation error
+          example: "SUCCESS"
+        message:
+          type: string
+          description: Human-readable message describing the overall result
+          example: "All 3 orders submitted successfully"
+        totalRequested:
+          type: integer
+          description: Total number of orders requested for submission
+          example: 3
+        successful:
+          type: integer
+          description: Number of orders successfully submitted
+          example: 3
+        failed:
+          type: integer
+          description: Number of orders that failed to submit
+          example: 0
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderSubmitResultDTO'
+          description: Array of individual order submission results
+      required: [status, message, totalRequested, successful, failed, results]
+    OrderSubmitResultDTO:
+      type: object
+      description: Individual order submission result within a batch submission
+      properties:
+        orderId:
+          type: integer
+          description: The ID of the order that was processed
+          example: 1
+        status:
+          type: string
+          enum: [SUCCESS, FAILURE]
+          description: Status of the individual order submission
+          example: "SUCCESS"
+        message:
+          type: string
+          description: |
+            Descriptive message about the submission result.
+            For success: confirmation message
+            For failure: error details explaining why submission failed
+          example: "Order submitted successfully"
+        tradeOrderId:
+          type: integer
+          nullable: true
+          description: |
+            The trade order ID returned from the trade service.
+            Only present when status is "SUCCESS", null for failures.
+          example: 12345
+        requestIndex:
+          type: integer
+          description: The zero-based index of this order in the original request array
+          example: 0
+      required: [orderId, status, message, requestIndex]
   responses:
     NotFound:
       description: Resource not found
