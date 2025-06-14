@@ -37,8 +37,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.IntStream;
+import java.util.Set;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.ArrayList;
 import org.kasbench.globeco_order_service.service.SecurityCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioCacheService;
+import org.kasbench.globeco_order_service.service.PortfolioServiceClient;
 import org.kasbench.globeco_order_service.dto.SecurityDTO;
 import org.kasbench.globeco_order_service.dto.PortfolioDTO;
 import org.springframework.data.domain.Page;
@@ -61,6 +66,7 @@ public class OrderService {
     private final RestTemplate restTemplate;
     private final SecurityCacheService securityCacheService;
     private final PortfolioCacheService portfolioCacheService;
+    private final PortfolioServiceClient portfolioServiceClient;
 
     public OrderService(
         OrderRepository orderRepository,
@@ -69,7 +75,8 @@ public class OrderService {
         OrderTypeRepository orderTypeRepository,
         RestTemplate restTemplate,
         SecurityCacheService securityCacheService,
-        PortfolioCacheService portfolioCacheService
+        PortfolioCacheService portfolioCacheService,
+        PortfolioServiceClient portfolioServiceClient
     ) {
         this.orderRepository = orderRepository;
         this.statusRepository = statusRepository;
@@ -78,6 +85,7 @@ public class OrderService {
         this.restTemplate = restTemplate;
         this.securityCacheService = securityCacheService;
         this.portfolioCacheService = portfolioCacheService;
+        this.portfolioServiceClient = portfolioServiceClient;
     }
 
     @Transactional
@@ -461,6 +469,8 @@ public class OrderService {
     
     /**
      * Get all orders with paging, sorting, and filtering support.
+     * This method properly resolves external service identifiers (security.ticker, portfolio.name)
+     * to their corresponding IDs before applying database filters.
      * 
      * @param limit Maximum number of results to return
      * @param offset Number of results to skip
@@ -476,8 +486,13 @@ public class OrderService {
         Sort sortSpec = SortingSpecification.parseSort(sort);
         Pageable pageable = PageRequest.of(offset / limit, limit, sortSpec);
         
-        // Create filtering specification
-        Specification<Order> filterSpec = FilteringSpecification.createFilterSpecification(filterParams);
+        // Resolve external service identifiers to IDs
+        Map<String, String> resolvedSecurityIds = resolveSecurityTickers(filterParams);
+        Map<String, String> resolvedPortfolioIds = resolvePortfolioNames(filterParams);
+        
+        // Create filtering specification with resolved IDs
+        Specification<Order> filterSpec = FilteringSpecification.createFilterSpecification(
+            filterParams, resolvedSecurityIds, resolvedPortfolioIds);
         
         // Execute query with paging, sorting, and filtering
         Page<Order> orderPage;
@@ -493,6 +508,87 @@ public class OrderService {
         
         // Convert to DTOs with external service data
         return orderPage.map(this::toDto);
+    }
+    
+    /**
+     * Resolve security tickers to security IDs using the security service.
+     * 
+     * CURRENT LIMITATION: The security service only supports lookup by securityId,
+     * not by ticker. This filtering feature cannot work until the security service
+     * provides an endpoint to search securities by ticker (e.g., GET /api/v1/securities?ticker=AAPL).
+     * 
+     * @param filterParams Map of filter parameters
+     * @return Empty map (security ticker filtering is not currently supported)
+     */
+    private Map<String, String> resolveSecurityTickers(Map<String, String> filterParams) {
+        Set<String> tickers = FilteringSpecification.extractSecurityTickers(filterParams);
+        Map<String, String> resolvedIds = new HashMap<>();
+        
+        if (tickers.isEmpty()) {
+            return resolvedIds; // No security tickers to resolve
+        }
+        
+        logger.warn("FILTERING LIMITATION: Cannot filter by security.ticker - Security service only supports lookup by securityId, not ticker. " +
+                   "Requested tickers {} will be ignored. External service needs endpoint: GET /api/v1/securities?ticker=<ticker>", tickers);
+        
+        // TODO: Implement proper ticker resolution when security service supports it
+        // For now, return empty map which will skip ticker-based filtering
+        return resolvedIds;
+    }
+    
+    /**
+     * Resolve portfolio names to portfolio IDs using the portfolio service.
+     * 
+     * CURRENT LIMITATION: The portfolio service only supports lookup by portfolioId,
+     * not by name. This filtering feature cannot work until the portfolio service
+     * provides an endpoint to search portfolios by name (e.g., GET /api/v1/portfolios?name=MyPortfolio).
+     * 
+     * @param filterParams Map of filter parameters
+     * @return Empty map (portfolio name filtering is not currently supported)
+     */
+    private Map<String, String> resolvePortfolioNames(Map<String, String> filterParams) {
+        Set<String> names = FilteringSpecification.extractPortfolioNames(filterParams);
+        Map<String, String> resolvedIds = new HashMap<>();
+        
+        if (names.isEmpty()) {
+            return resolvedIds; // No portfolio names to resolve
+        }
+        
+        logger.debug("Resolving portfolio names to IDs: {}", names);
+        
+        try {
+            // Convert Set to List for the service call
+            List<String> namesList = new ArrayList<>(names);
+            
+            // Call the portfolio service to resolve names to IDs
+            resolvedIds = portfolioServiceClient.searchPortfoliosByNames(namesList);
+            
+            if (resolvedIds.isEmpty()) {
+                logger.info("No portfolio names could be resolved to IDs. Names requested: {}", names);
+            } else {
+                logger.info("Successfully resolved {} of {} portfolio names to IDs", 
+                        resolvedIds.size(), names.size());
+                
+                // Log which names were not resolved
+                Set<String> unresolvedNames = new HashSet<>(names);
+                unresolvedNames.removeAll(resolvedIds.keySet());
+                if (!unresolvedNames.isEmpty()) {
+                    logger.info("Unresolved portfolio names (will be ignored in filtering): {}", unresolvedNames);
+                }
+            }
+            
+        } catch (PortfolioServiceClient.PortfolioServiceException e) {
+            logger.error("Portfolio service error while resolving names {}: {}", names, e.getMessage());
+            // Return empty map to skip filtering rather than failing the entire request
+            logger.warn("Portfolio name filtering will be skipped due to service error");
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error while resolving portfolio names {}: {}", names, e.getMessage(), e);
+            // Return empty map to skip filtering rather than failing the entire request
+            logger.warn("Portfolio name filtering will be skipped due to unexpected error");
+        }
+        
+        return resolvedIds;
     }
 
     public Optional<OrderWithDetailsDTO> getById(Integer id) {

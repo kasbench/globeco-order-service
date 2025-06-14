@@ -131,7 +131,7 @@ public class OrderController {
             }
             
             // Log the request for debugging
-            logger.debug("Orders request: limit={}, offset={}, sort={}, filters={}", 
+            logger.info("Orders request: limit={}, offset={}, sort={}, filters={}", 
                     limit, offset, sort, filterParams);
             
             // Call service layer with all parameters
@@ -149,7 +149,7 @@ public class OrderController {
                 "hasPrevious", result.hasPrevious()
             ));
             
-            logger.debug("Orders response: totalElements={}, currentPage={}, pageSize={}", 
+            logger.info("Orders response: totalElements={}, currentPage={}, pageSize={}", 
                     result.getTotalElements(), result.getNumber(), result.getSize());
             
             return ResponseEntity.ok(response);
