@@ -44,6 +44,7 @@ import java.util.ArrayList;
 import org.kasbench.globeco_order_service.service.SecurityCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioServiceClient;
+import org.kasbench.globeco_order_service.service.SecurityServiceClient;
 import org.kasbench.globeco_order_service.dto.SecurityDTO;
 import org.kasbench.globeco_order_service.dto.PortfolioDTO;
 import org.springframework.data.domain.Page;
@@ -67,6 +68,7 @@ public class OrderService {
     private final SecurityCacheService securityCacheService;
     private final PortfolioCacheService portfolioCacheService;
     private final PortfolioServiceClient portfolioServiceClient;
+    private final SecurityServiceClient securityServiceClient;
 
     public OrderService(
         OrderRepository orderRepository,
@@ -76,7 +78,8 @@ public class OrderService {
         RestTemplate restTemplate,
         SecurityCacheService securityCacheService,
         PortfolioCacheService portfolioCacheService,
-        PortfolioServiceClient portfolioServiceClient
+        PortfolioServiceClient portfolioServiceClient,
+        SecurityServiceClient securityServiceClient
     ) {
         this.orderRepository = orderRepository;
         this.statusRepository = statusRepository;
@@ -86,6 +89,7 @@ public class OrderService {
         this.securityCacheService = securityCacheService;
         this.portfolioCacheService = portfolioCacheService;
         this.portfolioServiceClient = portfolioServiceClient;
+        this.securityServiceClient = securityServiceClient;
     }
 
     @Transactional
@@ -511,14 +515,10 @@ public class OrderService {
     }
     
     /**
-     * Resolve security tickers to security IDs using the security service.
-     * 
-     * CURRENT LIMITATION: The security service only supports lookup by securityId,
-     * not by ticker. This filtering feature cannot work until the security service
-     * provides an endpoint to search securities by ticker (e.g., GET /api/v1/securities?ticker=AAPL).
+     * Resolve security tickers to security IDs using the security service v2 API.
      * 
      * @param filterParams Map of filter parameters
-     * @return Empty map (security ticker filtering is not currently supported)
+     * @return Map of ticker symbols to security IDs for found securities
      */
     private Map<String, String> resolveSecurityTickers(Map<String, String> filterParams) {
         Set<String> tickers = FilteringSpecification.extractSecurityTickers(filterParams);
@@ -528,11 +528,40 @@ public class OrderService {
             return resolvedIds; // No security tickers to resolve
         }
         
-        logger.warn("FILTERING LIMITATION: Cannot filter by security.ticker - Security service only supports lookup by securityId, not ticker. " +
-                   "Requested tickers {} will be ignored. External service needs endpoint: GET /api/v1/securities?ticker=<ticker>", tickers);
+        logger.debug("Resolving security tickers to IDs: {}", tickers);
         
-        // TODO: Implement proper ticker resolution when security service supports it
-        // For now, return empty map which will skip ticker-based filtering
+        try {
+            // Convert Set to List for the service call
+            List<String> tickersList = new ArrayList<>(tickers);
+            
+            // Call the security service to resolve tickers to IDs
+            resolvedIds = securityServiceClient.searchSecuritiesByTickers(tickersList);
+            
+            if (resolvedIds.isEmpty()) {
+                logger.info("No security tickers could be resolved to IDs. Tickers requested: {}", tickers);
+            } else {
+                logger.info("Successfully resolved {} of {} security tickers to IDs", 
+                        resolvedIds.size(), tickers.size());
+                
+                // Log which tickers were not resolved
+                Set<String> unresolvedTickers = new HashSet<>(tickers);
+                unresolvedTickers.removeAll(resolvedIds.keySet());
+                if (!unresolvedTickers.isEmpty()) {
+                    logger.info("Unresolved security tickers (will be ignored in filtering): {}", unresolvedTickers);
+                }
+            }
+            
+        } catch (SecurityServiceClient.SecurityServiceException e) {
+            logger.error("Security service error while resolving tickers {}: {}", tickers, e.getMessage());
+            // Return empty map to skip filtering rather than failing the entire request
+            logger.warn("Security ticker filtering will be skipped due to service error");
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error while resolving security tickers {}: {}", tickers, e.getMessage(), e);
+            // Return empty map to skip filtering rather than failing the entire request
+            logger.warn("Security ticker filtering will be skipped due to unexpected error");
+        }
+        
         return resolvedIds;
     }
     
