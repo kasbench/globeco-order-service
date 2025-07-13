@@ -4,20 +4,34 @@
 # COPY . .
 # RUN gradle build --no-daemon
 
-# ---- Runtime stage ----
-FROM eclipse-temurin:21-jre-alpine AS runtime
+# # ---- Runtime stage ----
+# FROM eclipse-temurin:21-jre-alpine AS runtime
 
-# Install curl and ping utilities
-RUN apk add --no-cache curl iputils
+# # Install curl and ping utilities
+# RUN apk add --no-cache curl iputils
 
-# Set the working directory
+# # Set the working directory
+# WORKDIR /app
+
+# # Copy the built jar from the build context
+# COPY build/libs/globeco-order-service-0.0.1-SNAPSHOT.jar app.jar
+
+# # Expose the default Spring Boot port
+# EXPOSE 8080
+
+# # Run the application
+# ENTRYPOINT ["java", "-jar", "app.jar"] 
+
+
+# ---- Build Stage ----
+FROM eclipse-temurin:21-jdk AS build
+WORKDIR /workspace/app
+COPY . .
+RUN ./gradlew clean bootJar --no-daemon
+
+# ---- Run Stage ----
+FROM eclipse-temurin:21-jre
 WORKDIR /app
-
-# Copy the built jar from the build context
-COPY build/libs/globeco-order-service-0.0.1-SNAPSHOT.jar app.jar
-
-# Expose the default Spring Boot port
+COPY --from=build /workspace/app/build/libs/*.jar app.jar
 EXPOSE 8080
-
-# Run the application
 ENTRYPOINT ["java", "-jar", "app.jar"] 

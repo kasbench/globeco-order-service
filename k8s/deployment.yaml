@@ -16,7 +16,8 @@ spec:
     spec:
       containers:
         - name: globeco-order-service
-          image: globeco-order-service:latest
+          image: kasbench/globeco-order-service:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           resources:
@@ -24,13 +25,13 @@ spec:
               cpu: "100m"
               memory: "200Mi"
             limits:
-              cpu: "100m"
-              memory: "200Mi"
+              cpu: "1000m"
+              memory: "1000Mi"
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: 8080
-            initialDelaySeconds: 10
+            initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 240
             failureThreshold: 3
@@ -38,15 +39,15 @@ spec:
             httpGet:
               path: /actuator/health/readiness
               port: 8080
-            initialDelaySeconds: 10
+            initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           startupProbe:
             httpGet:
-              path: /actuator/health/startup
+              path: /actuator/health/readiness
               port: 8080
-            initialDelaySeconds: 10
+            initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 30
