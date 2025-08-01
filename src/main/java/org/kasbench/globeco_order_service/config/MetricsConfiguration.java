@@ -3,6 +3,7 @@ package org.kasbench.globeco_order_service.config;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.kasbench.globeco_order_service.service.DatabaseMetricsService;
+import org.kasbench.globeco_order_service.service.DatabaseConnectionInterceptor;
 import org.kasbench.globeco_order_service.service.HttpMetricsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,6 +13,7 @@ import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.context.event.EventListener;
 
 import jakarta.annotation.PostConstruct;
+import javax.sql.DataSource;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -25,12 +27,14 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Configuration
-@ConditionalOnProperty(name = "metrics.custom.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "metrics.custom.enabled", havingValue = "true", matchIfMissing = false)
 public class MetricsConfiguration {
 
     private final MeterRegistry meterRegistry;
     private final DatabaseMetricsService databaseMetricsService;
+    private final DatabaseConnectionInterceptor databaseConnectionInterceptor;
     private final HttpMetricsService httpMetricsService;
+    private final DataSource dataSource;
     
     // Configuration properties
     @Value("${metrics.database.enabled:true}")
@@ -51,10 +55,14 @@ public class MetricsConfiguration {
     @Autowired
     public MetricsConfiguration(MeterRegistry meterRegistry,
                                DatabaseMetricsService databaseMetricsService,
-                               HttpMetricsService httpMetricsService) {
+                               DatabaseConnectionInterceptor databaseConnectionInterceptor,
+                               HttpMetricsService httpMetricsService,
+                               DataSource dataSource) {
         this.meterRegistry = meterRegistry;
         this.databaseMetricsService = databaseMetricsService;
+        this.databaseConnectionInterceptor = databaseConnectionInterceptor;
         this.httpMetricsService = httpMetricsService;
+        this.dataSource = dataSource;
     }
 
     /**
@@ -124,10 +132,24 @@ public class MetricsConfiguration {
         try {
             log.debug("Initializing database metrics...");
             
+            // Initialize the connection interceptor
+            databaseConnectionInterceptor.initialize(dataSource);
+            
+            // Validate that the interceptor is working
+            if (databaseConnectionInterceptor.validateInterceptor()) {
+                log.debug("Database connection interceptor validated successfully");
+            } else {
+                log.warn("Database connection interceptor validation failed");
+            }
+            
             // The DatabaseMetricsService already has @PostConstruct initialization
             // We just need to verify it's properly initialized
             if (databaseMetricsService.isInitialized()) {
                 log.info("Database metrics successfully initialized and registered");
+                
+                // Log current pool statistics for verification
+                String poolStats = databaseMetricsService.getPoolStatistics();
+                log.info("Current database pool status: {}", poolStats);
             } else {
                 log.warn("Database metrics service is not properly initialized");
             }
@@ -308,7 +330,13 @@ public class MetricsConfiguration {
         
         if (databaseMetricsEnabled) {
             boolean dbInitialized = databaseMetricsService.isInitialized();
+            boolean interceptorInitialized = databaseConnectionInterceptor.isInitialized();
             status.append("  - Database metrics: ").append(dbInitialized ? "INITIALIZED" : "NOT INITIALIZED").append("\n");
+            status.append("  - Connection interceptor: ").append(interceptorInitialized ? "INITIALIZED" : "NOT INITIALIZED").append("\n");
+            
+            if (dbInitialized) {
+                status.append("  - Pool statistics: ").append(databaseMetricsService.getPoolStatistics()).append("\n");
+            }
         } else {
             status.append("  - Database metrics: DISABLED\n");
         }
@@ -335,7 +363,8 @@ public class MetricsConfiguration {
         boolean allInitialized = true;
         
         if (databaseMetricsEnabled) {
-            allInitialized &= databaseMetricsService.isInitialized();
+            allInitialized &= databaseMetricsService.isInitialized() && 
+                             databaseConnectionInterceptor.isInitialized();
         }
         
         if (httpMetricsEnabled) {

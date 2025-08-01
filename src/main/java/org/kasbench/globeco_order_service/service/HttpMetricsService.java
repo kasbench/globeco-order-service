@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -19,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * connection pool integration when Apache HttpClient is properly configured.
  */
 @Service
+@ConditionalOnProperty(name = "metrics.http.enabled", havingValue = "true", matchIfMissing = false)
 public class HttpMetricsService {
     private static final Logger logger = LoggerFactory.getLogger(HttpMetricsService.class);
     

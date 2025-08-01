@@ -21,14 +21,14 @@
   - Ensure metrics use existing MeterRegistry configuration
   - _Requirements: 3.1, 3.2, 3.3, 5.1_
 
-- [ ] 4. Integrate database metrics with existing data access
+- [x] 4. Integrate database metrics with existing data access
   - Modify application configuration to expose HikariCP MXBean for metrics access
   - Add database metrics collection to capture connection acquisition timing
   - Implement connection pool monitoring without modifying existing repository code
   - Add proper exception handling for database metrics collection
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 5.2_
 
-- [ ] 5. Integrate HTTP metrics with service clients
+- [x] 5. Integrate HTTP metrics with service clients
   - Configure RestTemplate bean with connection pooling and metrics access
   - Add HTTP metrics collection to PortfolioServiceClient and SecurityServiceClient
   - Implement protocol detection (http/https) for proper labeling

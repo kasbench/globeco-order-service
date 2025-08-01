@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.kasbench.globeco_order_service.service.DatabaseMetricsService;
+import org.kasbench.globeco_order_service.service.DatabaseConnectionInterceptor;
 import org.kasbench.globeco_order_service.service.HttpMetricsService;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -17,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.lenient;
 
+import javax.sql.DataSource;
+
 @ExtendWith(MockitoExtension.class)
 class MetricsConfigurationTest {
 
@@ -24,7 +27,13 @@ class MetricsConfigurationTest {
     private DatabaseMetricsService databaseMetricsService;
 
     @Mock
+    private DatabaseConnectionInterceptor databaseConnectionInterceptor;
+
+    @Mock
     private HttpMetricsService httpMetricsService;
+
+    @Mock
+    private DataSource dataSource;
 
     @Mock
     private ContextRefreshedEvent contextRefreshedEvent;
@@ -35,7 +44,8 @@ class MetricsConfigurationTest {
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        metricsConfiguration = new MetricsConfiguration(meterRegistry, databaseMetricsService, httpMetricsService);
+        metricsConfiguration = new MetricsConfiguration(meterRegistry, databaseMetricsService, 
+                databaseConnectionInterceptor, httpMetricsService, dataSource);
         
         // Set default property values
         ReflectionTestUtils.setField(metricsConfiguration, "databaseMetricsEnabled", true);
@@ -43,6 +53,10 @@ class MetricsConfigurationTest {
         ReflectionTestUtils.setField(metricsConfiguration, "securityServiceUrl", "http://security-service:8000");
         ReflectionTestUtils.setField(metricsConfiguration, "portfolioServiceUrl", "http://portfolio-service:8000");
         ReflectionTestUtils.setField(metricsConfiguration, "initializationTimeoutSeconds", 30);
+        
+        // Set up mock behavior with lenient stubbing to avoid unnecessary stubbing exceptions
+        lenient().when(databaseConnectionInterceptor.isInitialized()).thenReturn(true);
+        lenient().when(databaseMetricsService.getPoolStatistics()).thenReturn("Pool Statistics - Total: 10, Active: 2, Idle: 8, Waiting: 0");
     }
 
     @Test
@@ -60,7 +74,8 @@ class MetricsConfigurationTest {
     @Test
     void testInitializeMetricsConfigurationWithNullMeterRegistry() {
         // Given
-        MetricsConfiguration configWithNullRegistry = new MetricsConfiguration(null, databaseMetricsService, httpMetricsService);
+        MetricsConfiguration configWithNullRegistry = new MetricsConfiguration(null, databaseMetricsService, 
+                databaseConnectionInterceptor, httpMetricsService, dataSource);
 
         // When/Then - Should not throw exception, just log error
         assertDoesNotThrow(() -> configWithNullRegistry.initializeMetricsConfiguration());
@@ -69,7 +84,8 @@ class MetricsConfigurationTest {
     @Test
     void testOnApplicationContextRefreshed() {
         // Given
-        when(databaseMetricsService.isInitialized()).thenReturn(true);
+        lenient().when(databaseMetricsService.isInitialized()).thenReturn(true);
+        lenient().when(databaseConnectionInterceptor.validateInterceptor()).thenReturn(true);
 
         // When
         metricsConfiguration.onApplicationContextRefreshed(contextRefreshedEvent);
@@ -81,6 +97,10 @@ class MetricsConfigurationTest {
             Thread.currentThread().interrupt();
         }
 
+        // Verify that database connection interceptor was initialized
+        verify(databaseConnectionInterceptor, timeout(1000)).initialize(dataSource);
+        verify(databaseConnectionInterceptor, timeout(1000)).validateInterceptor();
+        
         // Verify that HTTP metrics registration was attempted
         verify(httpMetricsService, timeout(1000)).registerHttpConnectionPoolMetrics("security-service", "http://security-service:8000");
         verify(httpMetricsService, timeout(1000)).registerHttpConnectionPoolMetrics("portfolio-service", "http://portfolio-service:8000");
@@ -89,8 +109,8 @@ class MetricsConfigurationTest {
     @Test
     void testGetMetricsStatusWithAllEnabled() {
         // Given
-        when(databaseMetricsService.isInitialized()).thenReturn(true);
-        when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service", "portfolio-service"));
+        lenient().when(databaseMetricsService.isInitialized()).thenReturn(true);
+        lenient().when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service", "portfolio-service"));
 
         // When
         String status = metricsConfiguration.getMetricsStatus();
@@ -107,7 +127,7 @@ class MetricsConfigurationTest {
     void testGetMetricsStatusWithDatabaseDisabled() {
         // Given
         ReflectionTestUtils.setField(metricsConfiguration, "databaseMetricsEnabled", false);
-        when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
+        lenient().when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
 
         // When
         String status = metricsConfiguration.getMetricsStatus();
@@ -122,7 +142,7 @@ class MetricsConfigurationTest {
     void testGetMetricsStatusWithHttpDisabled() {
         // Given
         ReflectionTestUtils.setField(metricsConfiguration, "httpMetricsEnabled", false);
-        when(databaseMetricsService.isInitialized()).thenReturn(true);
+        lenient().when(databaseMetricsService.isInitialized()).thenReturn(true);
 
         // When
         String status = metricsConfiguration.getMetricsStatus();
@@ -136,8 +156,9 @@ class MetricsConfigurationTest {
     @Test
     void testAreAllMetricsInitializedWhenAllEnabled() {
         // Given
-        when(databaseMetricsService.isInitialized()).thenReturn(true);
-        when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
+        lenient().when(databaseMetricsService.isInitialized()).thenReturn(true);
+        lenient().when(databaseConnectionInterceptor.isInitialized()).thenReturn(true);
+        lenient().when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
 
         // When
         boolean allInitialized = metricsConfiguration.areAllMetricsInitialized();
@@ -149,8 +170,9 @@ class MetricsConfigurationTest {
     @Test
     void testAreAllMetricsInitializedWhenDatabaseNotInitialized() {
         // Given
-        when(databaseMetricsService.isInitialized()).thenReturn(false);
-        when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
+        lenient().when(databaseMetricsService.isInitialized()).thenReturn(false);
+        lenient().when(databaseConnectionInterceptor.isInitialized()).thenReturn(true);
+        lenient().when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
 
         // When
         boolean allInitialized = metricsConfiguration.areAllMetricsInitialized();
@@ -162,8 +184,9 @@ class MetricsConfigurationTest {
     @Test
     void testAreAllMetricsInitializedWhenHttpNotInitialized() {
         // Given
-        when(databaseMetricsService.isInitialized()).thenReturn(true);
-        when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of());
+        lenient().when(databaseMetricsService.isInitialized()).thenReturn(true);
+        lenient().when(databaseConnectionInterceptor.isInitialized()).thenReturn(true);
+        lenient().when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of());
 
         // When
         boolean allInitialized = metricsConfiguration.areAllMetricsInitialized();
@@ -176,7 +199,7 @@ class MetricsConfigurationTest {
     void testAreAllMetricsInitializedWithDatabaseDisabled() {
         // Given
         ReflectionTestUtils.setField(metricsConfiguration, "databaseMetricsEnabled", false);
-        when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
+        lenient().when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
 
         // When
         boolean allInitialized = metricsConfiguration.areAllMetricsInitialized();
@@ -189,7 +212,7 @@ class MetricsConfigurationTest {
     void testAreAllMetricsInitializedWithHttpDisabled() {
         // Given
         ReflectionTestUtils.setField(metricsConfiguration, "httpMetricsEnabled", false);
-        when(databaseMetricsService.isInitialized()).thenReturn(true);
+        lenient().when(databaseMetricsService.isInitialized()).thenReturn(true);
 
         // When
         boolean allInitialized = metricsConfiguration.areAllMetricsInitialized();

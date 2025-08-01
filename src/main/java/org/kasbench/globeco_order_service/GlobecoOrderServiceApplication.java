@@ -15,15 +15,13 @@ public class GlobecoOrderServiceApplication {
 	}
 
 	@Bean
-	public RestTemplate restTemplate(HttpMetricsService httpMetricsService,
-									 @Value("${portfolio.service.url:http://globeco-portfolio-service:8000}") String portfolioServiceUrl,
+	public RestTemplate restTemplate(@Value("${portfolio.service.url:http://globeco-portfolio-service:8000}") String portfolioServiceUrl,
 									 @Value("${security.service.url:http://globeco-security-service:8000}") String securityServiceUrl) {
 		
 		RestTemplate restTemplate = new RestTemplate();
 		
-		// Register HTTP connection pool metrics for service clients
-		httpMetricsService.registerHttpConnectionPoolMetrics("portfolio-service", portfolioServiceUrl);
-		httpMetricsService.registerHttpConnectionPoolMetrics("security-service", securityServiceUrl);
+		// Note: HTTP metrics registration is handled by MetricsConfiguration when metrics are enabled
+		// This keeps the RestTemplate bean creation independent of metrics configuration
 		
 		return restTemplate;
 	}
