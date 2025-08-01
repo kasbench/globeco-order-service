@@ -7,7 +7,7 @@
   - Implement counters for pool exhaustion and acquisition failures
   - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 2. Create HTTP metrics service infrastructure
+- [x] 2. Create HTTP metrics service infrastructure
   - Implement HttpMetricsService class for HTTP connection pool monitoring
   - Create methods to register HTTP connection pool gauges with protocol labels
   - Configure RestTemplate with PoolingHttpClientConnectionManager for metrics access
