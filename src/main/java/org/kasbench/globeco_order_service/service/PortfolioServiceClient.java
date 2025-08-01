@@ -4,7 +4,9 @@ import org.kasbench.globeco_order_service.dto.PortfolioDTO;
 import org.kasbench.globeco_order_service.dto.PortfolioSearchResponseDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -13,6 +15,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -25,13 +28,28 @@ public class PortfolioServiceClient {
     
     private final RestTemplate restTemplate;
     private final String portfolioServiceUrl;
+    private final HttpMetricsService httpMetricsService;
     
     public PortfolioServiceClient(
             RestTemplate restTemplate,
-            @Value("${portfolio.service.url:http://globeco-portfolio-service:8000}") String portfolioServiceUrl
+            @Value("${portfolio.service.url:http://globeco-portfolio-service:8000}") String portfolioServiceUrl,
+            @Autowired(required = false) HttpMetricsService httpMetricsService
     ) {
         this.restTemplate = restTemplate;
         this.portfolioServiceUrl = portfolioServiceUrl;
+        this.httpMetricsService = httpMetricsService;
+    }
+    
+    @PostConstruct
+    public void initializeMetrics() {
+        if (httpMetricsService != null) {
+            try {
+                httpMetricsService.registerHttpConnectionPoolMetrics("portfolio-service", portfolioServiceUrl);
+                logger.debug("HTTP metrics registered for Portfolio Service");
+            } catch (Exception e) {
+                logger.warn("Failed to register HTTP metrics for Portfolio Service: {}", e.getMessage());
+            }
+        }
     }
     
     /**
@@ -53,6 +71,11 @@ public class PortfolioServiceClient {
         logger.debug("Calling portfolio service for portfolioId: {} at URL: {}", portfolioId, url);
         
         try {
+            // Update HTTP metrics before making the call
+            if (httpMetricsService != null) {
+                httpMetricsService.updateConnectionPoolMetricsFromManager();
+            }
+            
             ResponseEntity<PortfolioDTO> response = restTemplate.getForEntity(url, PortfolioDTO.class);
             
             Duration callDuration = Duration.between(startTime, Instant.now());
@@ -128,6 +151,11 @@ public class PortfolioServiceClient {
                         .toUriString();
                 
                 logger.debug("Searching portfolio service for name: '{}' at URL: {}", trimmedName, url);
+                
+                // Update HTTP metrics before making the call
+                if (httpMetricsService != null) {
+                    httpMetricsService.updateConnectionPoolMetricsFromManager();
+                }
                 
                 ResponseEntity<PortfolioSearchResponseDTO> response = restTemplate.getForEntity(
                         url, PortfolioSearchResponseDTO.class);

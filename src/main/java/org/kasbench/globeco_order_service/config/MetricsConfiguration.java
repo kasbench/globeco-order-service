@@ -43,10 +43,10 @@ public class MetricsConfiguration {
     @Value("${metrics.http.enabled:true}")
     private boolean httpMetricsEnabled;
     
-    @Value("${external.services.security.url:}")
+    @Value("${security.service.url:http://globeco-security-service:8000}")
     private String securityServiceUrl;
     
-    @Value("${external.services.portfolio.url:}")
+    @Value("${portfolio.service.url:http://globeco-portfolio-service:8000}")
     private String portfolioServiceUrl;
     
     @Value("${metrics.initialization.timeout:30}")

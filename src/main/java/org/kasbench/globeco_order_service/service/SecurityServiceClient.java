@@ -4,7 +4,9 @@ import org.kasbench.globeco_order_service.dto.SecurityDTO;
 import org.kasbench.globeco_order_service.dto.SecuritySearchResponseDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -13,6 +15,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -25,13 +28,28 @@ public class SecurityServiceClient {
     
     private final RestTemplate restTemplate;
     private final String securityServiceUrl;
+    private final HttpMetricsService httpMetricsService;
     
     public SecurityServiceClient(
             RestTemplate restTemplate,
-            @Value("${security.service.url:http://globeco-security-service:8000}") String securityServiceUrl
+            @Value("${security.service.url:http://globeco-security-service:8000}") String securityServiceUrl,
+            @Autowired(required = false) HttpMetricsService httpMetricsService
     ) {
         this.restTemplate = restTemplate;
         this.securityServiceUrl = securityServiceUrl;
+        this.httpMetricsService = httpMetricsService;
+    }
+    
+    @PostConstruct
+    public void initializeMetrics() {
+        if (httpMetricsService != null) {
+            try {
+                httpMetricsService.registerHttpConnectionPoolMetrics("security-service", securityServiceUrl);
+                logger.debug("HTTP metrics registered for Security Service");
+            } catch (Exception e) {
+                logger.warn("Failed to register HTTP metrics for Security Service: {}", e.getMessage());
+            }
+        }
     }
     
     /**
@@ -53,6 +71,11 @@ public class SecurityServiceClient {
         logger.debug("Calling security service for securityId: {} at URL: {}", securityId, url);
         
         try {
+            // Update HTTP metrics before making the call
+            if (httpMetricsService != null) {
+                httpMetricsService.updateConnectionPoolMetricsFromManager();
+            }
+            
             ResponseEntity<SecurityDTO> response = restTemplate.getForEntity(url, SecurityDTO.class);
             
             Duration callDuration = Duration.between(startTime, Instant.now());
@@ -128,6 +151,11 @@ public class SecurityServiceClient {
                         .toUriString();
                 
                 logger.debug("Searching security service for ticker: '{}' at URL: {}", trimmedTicker, url);
+                
+                // Update HTTP metrics before making the call
+                if (httpMetricsService != null) {
+                    httpMetricsService.updateConnectionPoolMetricsFromManager();
+                }
                 
                 ResponseEntity<SecuritySearchResponseDTO> response = restTemplate.getForEntity(
                         url, SecuritySearchResponseDTO.class);
