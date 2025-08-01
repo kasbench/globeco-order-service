@@ -38,25 +38,66 @@ class MetricsConfigurationTest {
     @Mock
     private ContextRefreshedEvent contextRefreshedEvent;
 
+    @Mock
+    private MetricsProperties metricsProperties;
+
     private MeterRegistry meterRegistry;
     private MetricsConfiguration metricsConfiguration;
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        metricsConfiguration = new MetricsConfiguration(meterRegistry, databaseMetricsService, 
-                databaseConnectionInterceptor, httpMetricsService, dataSource);
         
-        // Set default property values
-        ReflectionTestUtils.setField(metricsConfiguration, "databaseMetricsEnabled", true);
-        ReflectionTestUtils.setField(metricsConfiguration, "httpMetricsEnabled", true);
+        // Set up mock MetricsProperties with default values
+        setupMockMetricsProperties();
+        
+        metricsConfiguration = new MetricsConfiguration(meterRegistry, databaseMetricsService, 
+                databaseConnectionInterceptor, httpMetricsService, dataSource, metricsProperties);
+        
+        // Set legacy property values for backward compatibility
         ReflectionTestUtils.setField(metricsConfiguration, "securityServiceUrl", "http://security-service:8000");
         ReflectionTestUtils.setField(metricsConfiguration, "portfolioServiceUrl", "http://portfolio-service:8000");
-        ReflectionTestUtils.setField(metricsConfiguration, "initializationTimeoutSeconds", 30);
         
         // Set up mock behavior with lenient stubbing to avoid unnecessary stubbing exceptions
         lenient().when(databaseConnectionInterceptor.isInitialized()).thenReturn(true);
         lenient().when(databaseMetricsService.getPoolStatistics()).thenReturn("Pool Statistics - Total: 10, Active: 2, Idle: 8, Waiting: 0");
+    }
+
+    private void setupMockMetricsProperties() {
+        // Mock main properties
+        lenient().when(metricsProperties.isEnabled()).thenReturn(true);
+        
+        // Mock database properties
+        MetricsProperties.DatabaseMetrics databaseMetrics = mock(MetricsProperties.DatabaseMetrics.class);
+        lenient().when(databaseMetrics.isEnabled()).thenReturn(true);
+        lenient().when(metricsProperties.getDatabase()).thenReturn(databaseMetrics);
+        
+        // Mock HTTP properties
+        MetricsProperties.HttpMetrics httpMetrics = mock(MetricsProperties.HttpMetrics.class);
+        lenient().when(httpMetrics.isEnabled()).thenReturn(true);
+        lenient().when(httpMetrics.getMaxMonitoredServices()).thenReturn(10);
+        lenient().when(metricsProperties.getHttp()).thenReturn(httpMetrics);
+        
+        // Mock initialization properties
+        MetricsProperties.Initialization initialization = mock(MetricsProperties.Initialization.class);
+        lenient().when(initialization.getTimeout()).thenReturn(java.time.Duration.ofSeconds(30));
+        lenient().when(initialization.isRetryEnabled()).thenReturn(false);
+        lenient().when(initialization.isFailOnError()).thenReturn(false);
+        lenient().when(initialization.isValidationEnabled()).thenReturn(true);
+        lenient().when(initialization.isVerboseLogging()).thenReturn(false);
+        lenient().when(metricsProperties.getInitialization()).thenReturn(initialization);
+        
+        // Mock collection properties
+        MetricsProperties.Collection collection = mock(MetricsProperties.Collection.class);
+        lenient().when(collection.isAsyncEnabled()).thenReturn(true);
+        lenient().when(collection.getAsyncThreads()).thenReturn(2);
+        lenient().when(collection.getTimeoutMs()).thenReturn(5000L);
+        lenient().when(collection.isThresholdBasedCollection()).thenReturn(false);
+        lenient().when(metricsProperties.getCollection()).thenReturn(collection);
+        
+        // Mock effective intervals
+        lenient().when(metricsProperties.getEffectiveDatabaseCollectionInterval()).thenReturn(java.time.Duration.ofSeconds(30));
+        lenient().when(metricsProperties.getEffectiveHttpCollectionInterval()).thenReturn(java.time.Duration.ofSeconds(30));
     }
 
     @Test
@@ -75,7 +116,7 @@ class MetricsConfigurationTest {
     void testInitializeMetricsConfigurationWithNullMeterRegistry() {
         // Given
         MetricsConfiguration configWithNullRegistry = new MetricsConfiguration(null, databaseMetricsService, 
-                databaseConnectionInterceptor, httpMetricsService, dataSource);
+                databaseConnectionInterceptor, httpMetricsService, dataSource, metricsProperties);
 
         // When/Then - Should not throw exception, just log error
         assertDoesNotThrow(() -> configWithNullRegistry.initializeMetricsConfiguration());
@@ -119,14 +160,14 @@ class MetricsConfigurationTest {
         assertNotNull(status);
         assertTrue(status.contains("Custom Metrics Status:"));
         assertTrue(status.contains("Database metrics: INITIALIZED"));
-        assertTrue(status.contains("HTTP metrics: 2 services registered"));
+        assertTrue(status.contains("HTTP metrics: 2/10 services registered"));
         assertTrue(status.contains("Total registered meters:"));
     }
 
     @Test
     void testGetMetricsStatusWithDatabaseDisabled() {
         // Given
-        ReflectionTestUtils.setField(metricsConfiguration, "databaseMetricsEnabled", false);
+        lenient().when(metricsProperties.getDatabase().isEnabled()).thenReturn(false);
         lenient().when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
 
         // When
@@ -135,13 +176,13 @@ class MetricsConfigurationTest {
         // Then
         assertNotNull(status);
         assertTrue(status.contains("Database metrics: DISABLED"));
-        assertTrue(status.contains("HTTP metrics: 1 services registered"));
+        assertTrue(status.contains("HTTP metrics: 1/10 services registered"));
     }
 
     @Test
     void testGetMetricsStatusWithHttpDisabled() {
         // Given
-        ReflectionTestUtils.setField(metricsConfiguration, "httpMetricsEnabled", false);
+        lenient().when(metricsProperties.getHttp().isEnabled()).thenReturn(false);
         lenient().when(databaseMetricsService.isInitialized()).thenReturn(true);
 
         // When
@@ -198,7 +239,7 @@ class MetricsConfigurationTest {
     @Test
     void testAreAllMetricsInitializedWithDatabaseDisabled() {
         // Given
-        ReflectionTestUtils.setField(metricsConfiguration, "databaseMetricsEnabled", false);
+        lenient().when(metricsProperties.getDatabase().isEnabled()).thenReturn(false);
         lenient().when(httpMetricsService.getRegisteredServices()).thenReturn(java.util.Set.of("security-service"));
 
         // When
@@ -211,7 +252,7 @@ class MetricsConfigurationTest {
     @Test
     void testAreAllMetricsInitializedWithHttpDisabled() {
         // Given
-        ReflectionTestUtils.setField(metricsConfiguration, "httpMetricsEnabled", false);
+        lenient().when(metricsProperties.getHttp().isEnabled()).thenReturn(false);
         lenient().when(databaseMetricsService.isInitialized()).thenReturn(true);
 
         // When

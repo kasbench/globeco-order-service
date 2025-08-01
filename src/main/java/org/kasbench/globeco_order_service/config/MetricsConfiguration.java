@@ -8,6 +8,7 @@ import org.kasbench.globeco_order_service.service.HttpMetricsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.context.event.EventListener;
@@ -27,6 +28,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Configuration
+@EnableConfigurationProperties(MetricsProperties.class)
 @ConditionalOnProperty(name = "metrics.custom.enabled", havingValue = "true", matchIfMissing = false)
 public class MetricsConfiguration {
 
@@ -35,34 +37,28 @@ public class MetricsConfiguration {
     private final DatabaseConnectionInterceptor databaseConnectionInterceptor;
     private final HttpMetricsService httpMetricsService;
     private final DataSource dataSource;
+    private final MetricsProperties metricsProperties;
     
-    // Configuration properties
-    @Value("${metrics.database.enabled:true}")
-    private boolean databaseMetricsEnabled;
-    
-    @Value("${metrics.http.enabled:true}")
-    private boolean httpMetricsEnabled;
-    
+    // Legacy configuration properties for backward compatibility
     @Value("${security.service.url:http://globeco-security-service:8000}")
     private String securityServiceUrl;
     
     @Value("${portfolio.service.url:http://globeco-portfolio-service:8000}")
     private String portfolioServiceUrl;
-    
-    @Value("${metrics.initialization.timeout:30}")
-    private int initializationTimeoutSeconds;
 
     @Autowired
     public MetricsConfiguration(MeterRegistry meterRegistry,
                                DatabaseMetricsService databaseMetricsService,
                                DatabaseConnectionInterceptor databaseConnectionInterceptor,
                                HttpMetricsService httpMetricsService,
-                               DataSource dataSource) {
+                               DataSource dataSource,
+                               MetricsProperties metricsProperties) {
         this.meterRegistry = meterRegistry;
         this.databaseMetricsService = databaseMetricsService;
         this.databaseConnectionInterceptor = databaseConnectionInterceptor;
         this.httpMetricsService = httpMetricsService;
         this.dataSource = dataSource;
+        this.metricsProperties = metricsProperties;
     }
 
     /**
@@ -75,12 +71,20 @@ public class MetricsConfiguration {
         log.info("Starting custom metrics configuration initialization");
         
         try {
+            // Validate and apply configuration properties
+            metricsProperties.validate();
+            
             validateMeterRegistry();
             logMetricsConfiguration();
             log.info("Custom metrics configuration initialized successfully");
         } catch (Exception e) {
             log.error("Failed to initialize custom metrics configuration: {}", e.getMessage(), e);
-            // Don't fail application startup for metrics configuration issues
+            
+            // Check if we should fail on error
+            if (metricsProperties.getInitialization().isFailOnError()) {
+                throw new RuntimeException("Metrics configuration initialization failed", e);
+            }
+            // Otherwise, continue application startup
         }
     }
 
@@ -93,16 +97,32 @@ public class MetricsConfiguration {
         log.info("Application context refreshed, starting custom metrics registration");
         
         // Use async initialization to avoid blocking application startup
-        CompletableFuture.runAsync(this::initializeAllMetrics)
-            .orTimeout(initializationTimeoutSeconds, TimeUnit.SECONDS)
-            .whenComplete((result, throwable) -> {
-                if (throwable != null) {
-                    log.error("Custom metrics initialization timed out or failed: {}", 
-                             throwable.getMessage(), throwable);
-                } else {
-                    log.info("Custom metrics initialization completed successfully");
+        long timeoutSeconds = metricsProperties.getInitialization().getTimeout().getSeconds();
+        
+        CompletableFuture<Void> initFuture = CompletableFuture.runAsync(this::initializeAllMetrics)
+            .orTimeout(timeoutSeconds, TimeUnit.SECONDS);
+            
+        if (metricsProperties.getInitialization().isRetryEnabled()) {
+            initFuture = addRetryLogic(initFuture);
+        }
+        
+        initFuture.whenComplete((result, throwable) -> {
+            if (throwable != null) {
+                log.error("Custom metrics initialization timed out or failed: {}", 
+                         throwable.getMessage(), throwable);
+                         
+                if (metricsProperties.getInitialization().isFailOnError()) {
+                    // In a real scenario, you might want to trigger application shutdown
+                    log.error("Metrics initialization failure is configured as fatal");
                 }
-            });
+            } else {
+                log.info("Custom metrics initialization completed successfully");
+                
+                if (metricsProperties.getInitialization().isValidationEnabled()) {
+                    validateMetricsRegistration();
+                }
+            }
+        });
     }
 
     /**
@@ -121,10 +141,53 @@ public class MetricsConfiguration {
     }
 
     /**
+     * Adds retry logic to the initialization future if retry is enabled.
+     */
+    private CompletableFuture<Void> addRetryLogic(CompletableFuture<Void> originalFuture) {
+        return originalFuture.handle((result, throwable) -> {
+            if (throwable != null && metricsProperties.getInitialization().isRetryEnabled()) {
+                return retryInitialization(0);
+            }
+            return CompletableFuture.completedFuture(result);
+        }).thenCompose(future -> future);
+    }
+
+    /**
+     * Retries metrics initialization with exponential backoff.
+     */
+    private CompletableFuture<Void> retryInitialization(int attempt) {
+        int maxRetries = metricsProperties.getInitialization().getMaxRetries();
+        long retryDelay = metricsProperties.getInitialization().getRetryDelayMs();
+        
+        if (attempt >= maxRetries) {
+            log.error("Maximum retry attempts ({}) exceeded for metrics initialization", maxRetries);
+            return CompletableFuture.failedFuture(
+                new RuntimeException("Metrics initialization failed after " + maxRetries + " attempts"));
+        }
+        
+        log.info("Retrying metrics initialization (attempt {} of {})", attempt + 1, maxRetries);
+        
+        return CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(retryDelay * (attempt + 1)); // Exponential backoff
+                initializeAllMetrics();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Retry interrupted", e);
+            }
+        }).handle((result, throwable) -> {
+            if (throwable != null) {
+                return retryInitialization(attempt + 1);
+            }
+            return CompletableFuture.completedFuture(result);
+        }).thenCompose(future -> future);
+    }
+
+    /**
      * Initializes database metrics if enabled.
      */
     private void initializeDatabaseMetrics() {
-        if (!databaseMetricsEnabled) {
+        if (!metricsProperties.getDatabase().isEnabled()) {
             log.info("Database metrics are disabled, skipping initialization");
             return;
         }
@@ -164,13 +227,17 @@ public class MetricsConfiguration {
      * Initializes HTTP metrics if enabled.
      */
     private void initializeHttpMetrics() {
-        if (!httpMetricsEnabled) {
+        if (!metricsProperties.getHttp().isEnabled()) {
             log.info("HTTP metrics are disabled, skipping initialization");
             return;
         }
 
         try {
-            log.debug("Initializing HTTP metrics...");
+            if (metricsProperties.getInitialization().isVerboseLogging()) {
+                log.info("Initializing HTTP metrics with configuration: {}", metricsProperties.getHttp());
+            } else {
+                log.debug("Initializing HTTP metrics...");
+            }
             
             // Register HTTP metrics for external services
             registerHttpMetricsForServices();
@@ -187,29 +254,50 @@ public class MetricsConfiguration {
      * Registers HTTP connection pool metrics for external services.
      */
     private void registerHttpMetricsForServices() {
+        int maxServices = metricsProperties.getHttp().getMaxMonitoredServices();
+        int registeredCount = 0;
+        
         // Register metrics for Security Service
-        if (securityServiceUrl != null && !securityServiceUrl.trim().isEmpty()) {
+        if (securityServiceUrl != null && !securityServiceUrl.trim().isEmpty() && registeredCount < maxServices) {
             try {
                 httpMetricsService.registerHttpConnectionPoolMetrics("security-service", securityServiceUrl);
-                log.debug("Registered HTTP metrics for Security Service: {}", securityServiceUrl);
+                registeredCount++;
+                
+                if (metricsProperties.getInitialization().isVerboseLogging()) {
+                    log.info("Registered HTTP metrics for Security Service: {}", securityServiceUrl);
+                } else {
+                    log.debug("Registered HTTP metrics for Security Service: {}", securityServiceUrl);
+                }
             } catch (Exception e) {
                 log.warn("Failed to register HTTP metrics for Security Service: {}", e.getMessage());
             }
+        } else if (registeredCount >= maxServices) {
+            log.warn("Maximum monitored services limit ({}) reached, skipping Security Service", maxServices);
         } else {
             log.warn("Security Service URL not configured, skipping HTTP metrics registration");
         }
 
         // Register metrics for Portfolio Service
-        if (portfolioServiceUrl != null && !portfolioServiceUrl.trim().isEmpty()) {
+        if (portfolioServiceUrl != null && !portfolioServiceUrl.trim().isEmpty() && registeredCount < maxServices) {
             try {
                 httpMetricsService.registerHttpConnectionPoolMetrics("portfolio-service", portfolioServiceUrl);
-                log.debug("Registered HTTP metrics for Portfolio Service: {}", portfolioServiceUrl);
+                registeredCount++;
+                
+                if (metricsProperties.getInitialization().isVerboseLogging()) {
+                    log.info("Registered HTTP metrics for Portfolio Service: {}", portfolioServiceUrl);
+                } else {
+                    log.debug("Registered HTTP metrics for Portfolio Service: {}", portfolioServiceUrl);
+                }
             } catch (Exception e) {
                 log.warn("Failed to register HTTP metrics for Portfolio Service: {}", e.getMessage());
             }
+        } else if (registeredCount >= maxServices) {
+            log.warn("Maximum monitored services limit ({}) reached, skipping Portfolio Service", maxServices);
         } else {
             log.warn("Portfolio Service URL not configured, skipping HTTP metrics registration");
         }
+        
+        log.info("Registered HTTP metrics for {} services (max: {})", registeredCount, maxServices);
     }
 
     /**
@@ -255,12 +343,12 @@ public class MetricsConfiguration {
      */
     private void validateSpecificMetrics() {
         // Check database metrics
-        if (databaseMetricsEnabled) {
+        if (metricsProperties.getDatabase().isEnabled()) {
             validateDatabaseMetrics();
         }
         
         // Check HTTP metrics
-        if (httpMetricsEnabled) {
+        if (metricsProperties.getHttp().isEnabled()) {
             validateHttpMetrics();
         }
     }
@@ -311,12 +399,28 @@ public class MetricsConfiguration {
      */
     private void logMetricsConfiguration() {
         log.info("Custom Metrics Configuration:");
-        log.info("  - Database metrics enabled: {}", databaseMetricsEnabled);
-        log.info("  - HTTP metrics enabled: {}", httpMetricsEnabled);
+        log.info("  - Master enabled: {}", metricsProperties.isEnabled());
+        log.info("  - Database metrics enabled: {}", metricsProperties.getDatabase().isEnabled());
+        log.info("  - HTTP metrics enabled: {}", metricsProperties.getHttp().isEnabled());
+        log.info("  - Database collection interval: {}", metricsProperties.getEffectiveDatabaseCollectionInterval());
+        log.info("  - HTTP collection interval: {}", metricsProperties.getEffectiveHttpCollectionInterval());
+        log.info("  - Async collection enabled: {}", metricsProperties.getCollection().isAsyncEnabled());
+        log.info("  - Batch collection enabled: {}", metricsProperties.getCollection().isBatchEnabled());
+        log.info("  - Initialization timeout: {}", metricsProperties.getInitialization().getTimeout());
+        log.info("  - Retry enabled: {}", metricsProperties.getInitialization().isRetryEnabled());
+        log.info("  - Max retries: {}", metricsProperties.getInitialization().getMaxRetries());
+        log.info("  - Fail on error: {}", metricsProperties.getInitialization().isFailOnError());
         log.info("  - Security Service URL: {}", securityServiceUrl != null ? securityServiceUrl : "not configured");
         log.info("  - Portfolio Service URL: {}", portfolioServiceUrl != null ? portfolioServiceUrl : "not configured");
-        log.info("  - Initialization timeout: {} seconds", initializationTimeoutSeconds);
         log.info("  - MeterRegistry class: {}", meterRegistry.getClass().getSimpleName());
+        
+        if (metricsProperties.getInitialization().isVerboseLogging()) {
+            log.info("  - Database detailed timing: {}", metricsProperties.getDatabase().isDetailedTimingEnabled());
+            log.info("  - Database leak detection: {}", metricsProperties.getDatabase().isLeakDetectionEnabled());
+            log.info("  - HTTP per-route metrics: {}", metricsProperties.getHttp().isPerRouteMetricsEnabled());
+            log.info("  - HTTP connection timing: {}", metricsProperties.getHttp().isConnectionTimingEnabled());
+            log.info("  - Max monitored HTTP services: {}", metricsProperties.getHttp().getMaxMonitoredServices());
+        }
     }
 
     /**
@@ -328,11 +432,12 @@ public class MetricsConfiguration {
         StringBuilder status = new StringBuilder();
         status.append("Custom Metrics Status:\n");
         
-        if (databaseMetricsEnabled) {
+        if (metricsProperties.getDatabase().isEnabled()) {
             boolean dbInitialized = databaseMetricsService.isInitialized();
             boolean interceptorInitialized = databaseConnectionInterceptor.isInitialized();
             status.append("  - Database metrics: ").append(dbInitialized ? "INITIALIZED" : "NOT INITIALIZED").append("\n");
             status.append("  - Connection interceptor: ").append(interceptorInitialized ? "INITIALIZED" : "NOT INITIALIZED").append("\n");
+            status.append("  - Collection interval: ").append(metricsProperties.getEffectiveDatabaseCollectionInterval()).append("\n");
             
             if (dbInitialized) {
                 status.append("  - Pool statistics: ").append(databaseMetricsService.getPoolStatistics()).append("\n");
@@ -341,9 +446,11 @@ public class MetricsConfiguration {
             status.append("  - Database metrics: DISABLED\n");
         }
         
-        if (httpMetricsEnabled) {
+        if (metricsProperties.getHttp().isEnabled()) {
             int registeredServices = httpMetricsService.getRegisteredServices().size();
-            status.append("  - HTTP metrics: ").append(registeredServices).append(" services registered\n");
+            int maxServices = metricsProperties.getHttp().getMaxMonitoredServices();
+            status.append("  - HTTP metrics: ").append(registeredServices).append("/").append(maxServices).append(" services registered\n");
+            status.append("  - Collection interval: ").append(metricsProperties.getEffectiveHttpCollectionInterval()).append("\n");
         } else {
             status.append("  - HTTP metrics: DISABLED\n");
         }
@@ -362,16 +469,63 @@ public class MetricsConfiguration {
     public boolean areAllMetricsInitialized() {
         boolean allInitialized = true;
         
-        if (databaseMetricsEnabled) {
+        if (metricsProperties.getDatabase().isEnabled()) {
             allInitialized &= databaseMetricsService.isInitialized() && 
                              databaseConnectionInterceptor.isInitialized();
         }
         
-        if (httpMetricsEnabled) {
+        if (metricsProperties.getHttp().isEnabled()) {
             // HTTP metrics are considered initialized if at least one service is registered
             allInitialized &= !httpMetricsService.getRegisteredServices().isEmpty();
         }
         
         return allInitialized;
+    }
+
+    /**
+     * Gets the current metrics properties configuration.
+     * 
+     * @return the metrics properties
+     */
+    public MetricsProperties getMetricsProperties() {
+        return metricsProperties;
+    }
+
+    /**
+     * Checks if the configuration allows for conditional metric registration.
+     * This can be used by individual metric services to determine if they should
+     * register metrics based on current system state or thresholds.
+     * 
+     * @return true if conditional registration is enabled
+     */
+    public boolean isConditionalRegistrationEnabled() {
+        return metricsProperties.getCollection().isThresholdBasedCollection();
+    }
+
+    /**
+     * Gets the effective timeout for metric collection operations.
+     * 
+     * @return timeout in milliseconds
+     */
+    public long getCollectionTimeoutMs() {
+        return metricsProperties.getCollection().getTimeoutMs();
+    }
+
+    /**
+     * Checks if asynchronous metric collection is enabled.
+     * 
+     * @return true if async collection is enabled
+     */
+    public boolean isAsyncCollectionEnabled() {
+        return metricsProperties.getCollection().isAsyncEnabled();
+    }
+
+    /**
+     * Gets the number of threads configured for asynchronous metric collection.
+     * 
+     * @return number of async threads
+     */
+    public int getAsyncThreadCount() {
+        return metricsProperties.getCollection().getAsyncThreads();
     }
 }

@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "metrics.database.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(name = "metrics.custom.database.enabled", havingValue = "true", matchIfMissing = false)
 public class DatabaseMetricsService {
 
     private final MeterRegistry meterRegistry;

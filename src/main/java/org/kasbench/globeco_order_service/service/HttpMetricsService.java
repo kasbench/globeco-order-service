@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * connection pool integration when Apache HttpClient is properly configured.
  */
 @Service
-@ConditionalOnProperty(name = "metrics.http.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(name = "metrics.custom.http.enabled", havingValue = "true", matchIfMissing = false)
 public class HttpMetricsService {
     private static final Logger logger = LoggerFactory.getLogger(HttpMetricsService.class);
     
