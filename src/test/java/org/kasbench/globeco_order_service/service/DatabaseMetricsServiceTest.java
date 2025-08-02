@@ -249,4 +249,166 @@ class DatabaseMetricsServiceTest {
         Timer timer = meterRegistry.find("db_connection_acquisition_duration_seconds").timer();
         assertThat(timer.count()).isEqualTo(0);
     }
+
+    @Test
+    void shouldHandleHikariPoolMXBeanReturningNull() {
+        // Given
+        when(hikariDataSource.getHikariPoolMXBean()).thenReturn(null);
+        databaseMetricsService = new DatabaseMetricsService(meterRegistry, hikariDataSource);
+
+        // When
+        databaseMetricsService.initializeDatabaseMetrics();
+
+        // Then - should handle gracefully and not initialize
+        assertThat(databaseMetricsService.isInitialized()).isFalse();
+        assertThat(meterRegistry.find("db_connection_acquisition_duration_seconds").timer()).isNull();
+    }
+
+    @Test
+    void shouldHandleMetricRegistrationFailures() {
+        // Given - Create a MeterRegistry that throws exceptions
+        MeterRegistry faultyRegistry = new SimpleMeterRegistry() {
+            @Override
+            public Timer timer(String name, String... tags) {
+                throw new RuntimeException("Metric registration failed");
+            }
+        };
+        when(hikariDataSource.getHikariPoolMXBean()).thenReturn(hikariPoolMXBean);
+        databaseMetricsService = new DatabaseMetricsService(faultyRegistry, hikariDataSource);
+
+        // When & Then - should not throw exception and handle gracefully
+        databaseMetricsService.initializeDatabaseMetrics();
+        assertThat(databaseMetricsService.isInitialized()).isFalse();
+    }
+
+    @Test
+    void shouldValidateMetricNamingConventions() {
+        // Given
+        when(hikariDataSource.getHikariPoolMXBean()).thenReturn(hikariPoolMXBean);
+        databaseMetricsService = new DatabaseMetricsService(meterRegistry, hikariDataSource);
+        databaseMetricsService.initializeDatabaseMetrics();
+
+        // When & Then - Verify Prometheus naming conventions (Requirements 4.1, 4.2, 4.3, 4.4)
+        
+        // Counter metrics should use _total suffix (Requirement 4.1)
+        Counter poolExhaustionCounter = meterRegistry.find("db_pool_exhaustion_events_total").counter();
+        assertThat(poolExhaustionCounter).isNotNull();
+        assertThat(poolExhaustionCounter.getId().getName()).endsWith("_total");
+
+        Counter acquisitionFailureCounter = meterRegistry.find("db_connection_acquisition_failures_total").counter();
+        assertThat(acquisitionFailureCounter).isNotNull();
+        assertThat(acquisitionFailureCounter.getId().getName()).endsWith("_total");
+
+        // Duration metrics should use _seconds suffix and be Timer type (Requirement 4.2)
+        Timer acquisitionTimer = meterRegistry.find("db_connection_acquisition_duration_seconds").timer();
+        assertThat(acquisitionTimer).isNotNull();
+        assertThat(acquisitionTimer.getId().getName()).endsWith("_seconds");
+
+        // Gauge metrics should use descriptive names without time-based suffixes (Requirement 4.3)
+        Gauge totalGauge = meterRegistry.find("db_pool_connections_total").gauge();
+        assertThat(totalGauge).isNotNull();
+        assertThat(totalGauge.getId().getName()).doesNotEndWith("_seconds");
+        assertThat(totalGauge.getId().getName()).doesNotEndWith("_duration");
+
+        // All metrics should use snake_case format (Requirement 4.4)
+        meterRegistry.getMeters().forEach(meter -> {
+            String name = meter.getId().getName();
+            if (name.startsWith("db_")) {
+                assertThat(name).matches("^[a-z][a-z0-9_]*[a-z0-9]$");
+                assertThat(name).doesNotContain("__");
+            }
+        });
+    }
+
+    @Test
+    void shouldHandleNegativeDurationValues() {
+        // Given
+        when(hikariDataSource.getHikariPoolMXBean()).thenReturn(hikariPoolMXBean);
+        databaseMetricsService = new DatabaseMetricsService(meterRegistry, hikariDataSource);
+        databaseMetricsService.initializeDatabaseMetrics();
+
+        // When - record negative duration (should be handled gracefully)
+        databaseMetricsService.recordConnectionAcquisitionDuration(-100, TimeUnit.MILLISECONDS);
+
+        // Then - Timer should still work (Micrometer handles negative values)
+        Timer timer = meterRegistry.find("db_connection_acquisition_duration_seconds").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldHandleZeroDurationValues() {
+        // Given
+        when(hikariDataSource.getHikariPoolMXBean()).thenReturn(hikariPoolMXBean);
+        databaseMetricsService = new DatabaseMetricsService(meterRegistry, hikariDataSource);
+        databaseMetricsService.initializeDatabaseMetrics();
+
+        // When
+        databaseMetricsService.recordConnectionAcquisitionDuration(0, TimeUnit.MILLISECONDS);
+
+        // Then
+        Timer timer = meterRegistry.find("db_connection_acquisition_duration_seconds").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+        assertThat(timer.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(0);
+    }
+
+    @Test
+    void shouldHandleMultipleInitializationCalls() {
+        // Given
+        when(hikariDataSource.getHikariPoolMXBean()).thenReturn(hikariPoolMXBean);
+        databaseMetricsService = new DatabaseMetricsService(meterRegistry, hikariDataSource);
+
+        // When - call initialization multiple times
+        databaseMetricsService.initializeDatabaseMetrics();
+        databaseMetricsService.initializeDatabaseMetrics();
+        databaseMetricsService.initializeDatabaseMetrics();
+
+        // Then - should handle gracefully and only register metrics once
+        assertThat(databaseMetricsService.isInitialized()).isTrue();
+        
+        // Verify metrics are registered only once (no duplicates)
+        long timerCount = meterRegistry.getMeters().stream()
+            .filter(meter -> meter.getId().getName().equals("db_connection_acquisition_duration_seconds"))
+            .count();
+        assertThat(timerCount).isEqualTo(1);
+    }
+
+    @Test
+    void shouldValidateAllRequiredMetricsFromRequirements() {
+        // Given
+        when(hikariDataSource.getHikariPoolMXBean()).thenReturn(hikariPoolMXBean);
+        databaseMetricsService = new DatabaseMetricsService(meterRegistry, hikariDataSource);
+        databaseMetricsService.initializeDatabaseMetrics();
+
+        // When & Then - Verify all metrics from Requirements 1.1, 1.2, 1.3, 1.4 are present
+        
+        // Requirement 1.1: db_connection_acquisition_duration_seconds histogram
+        Timer acquisitionTimer = meterRegistry.find("db_connection_acquisition_duration_seconds").timer();
+        assertThat(acquisitionTimer).isNotNull();
+        assertThat(acquisitionTimer.getId().getDescription()).isEqualTo("Time taken to acquire a database connection");
+
+        // Requirement 1.2: db_pool_exhaustion_events_total counter
+        Counter exhaustionCounter = meterRegistry.find("db_pool_exhaustion_events_total").counter();
+        assertThat(exhaustionCounter).isNotNull();
+        assertThat(exhaustionCounter.getId().getDescription()).isEqualTo("Number of times the database pool reached capacity");
+
+        // Requirement 1.3: db_connection_acquisition_failures_total counter
+        Counter failureCounter = meterRegistry.find("db_connection_acquisition_failures_total").counter();
+        assertThat(failureCounter).isNotNull();
+        assertThat(failureCounter.getId().getDescription()).isEqualTo("Failed attempts to acquire a database connection");
+
+        // Requirement 1.4: Pool state gauges
+        Gauge totalGauge = meterRegistry.find("db_pool_connections_total").gauge();
+        assertThat(totalGauge).isNotNull();
+        assertThat(totalGauge.getId().getDescription()).isEqualTo("Maximum connections the pool can handle");
+
+        Gauge activeGauge = meterRegistry.find("db_pool_connections_active").gauge();
+        assertThat(activeGauge).isNotNull();
+        assertThat(activeGauge.getId().getDescription()).isEqualTo("Currently active database connections");
+
+        Gauge idleGauge = meterRegistry.find("db_pool_connections_idle").gauge();
+        assertThat(idleGauge).isNotNull();
+        assertThat(idleGauge.getId().getDescription()).isEqualTo("Currently idle database connections");
+    }
 }

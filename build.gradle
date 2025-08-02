@@ -43,6 +43,9 @@ dependencies {
 	implementation 'io.micrometer:micrometer-tracing-bridge-otel'
 	implementation 'io.opentelemetry:opentelemetry-exporter-otlp:1.38.0'
 	implementation 'com.zaxxer:HikariCP'
+	implementation 'org.apache.httpcomponents.client5:httpclient5'
+	implementation 'org.apache.httpcomponents.core5:httpcore5'
+	implementation 'org.apache.httpcomponents.core5:httpcore5-h2'
 }
 
 tasks.named('test') {

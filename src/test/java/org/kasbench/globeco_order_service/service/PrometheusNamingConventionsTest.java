@@ -77,7 +77,7 @@ class PrometheusNamingConventionsTest {
         String serviceName = "test-service";
         String serviceUrl = "https://test-service:8443";
         MeterRegistry localMeterRegistry = new SimpleMeterRegistry();
-        HttpMetricsService localHttpMetricsService = new HttpMetricsService(localMeterRegistry);
+        HttpMetricsService localHttpMetricsService = new HttpMetricsService(localMeterRegistry, null);
         localHttpMetricsService.registerHttpConnectionPoolMetrics(serviceName, serviceUrl);
 
         // When & Then - Verify gauge metrics use descriptive names without time-based suffixes
@@ -118,7 +118,7 @@ class PrometheusNamingConventionsTest {
         when(hikariDataSource.getHikariPoolMXBean()).thenReturn(hikariPoolMXBean);
         
         DatabaseMetricsService databaseMetricsService = new DatabaseMetricsService(meterRegistry, hikariDataSource);
-        HttpMetricsService httpMetricsService = new HttpMetricsService(meterRegistry);
+        HttpMetricsService httpMetricsService = new HttpMetricsService(meterRegistry, null);
         databaseMetricsService.initializeDatabaseMetrics();
         httpMetricsService.registerHttpConnectionPoolMetrics("test-service", "http://test:8080");
 
@@ -153,7 +153,7 @@ class PrometheusNamingConventionsTest {
         when(hikariDataSource.getHikariPoolMXBean()).thenReturn(hikariPoolMXBean);
         
         DatabaseMetricsService databaseMetricsService = new DatabaseMetricsService(meterRegistry, hikariDataSource);
-        HttpMetricsService httpMetricsService = new HttpMetricsService(meterRegistry);
+        HttpMetricsService httpMetricsService = new HttpMetricsService(meterRegistry, null);
         databaseMetricsService.initializeDatabaseMetrics();
         httpMetricsService.registerHttpConnectionPoolMetrics("test-service", "http://test:8080");
 
@@ -180,7 +180,7 @@ class PrometheusNamingConventionsTest {
     void shouldHaveProperLabelsForHttpMetrics() {
         // Given
         MeterRegistry localMeterRegistry = new SimpleMeterRegistry();
-        HttpMetricsService localHttpMetricsService = new HttpMetricsService(localMeterRegistry);
+        HttpMetricsService localHttpMetricsService = new HttpMetricsService(localMeterRegistry, null);
         localHttpMetricsService.registerHttpConnectionPoolMetrics("security-service", "https://security:8443");
         localHttpMetricsService.registerHttpConnectionPoolMetrics("portfolio-service", "http://portfolio:8080");
 
@@ -211,7 +211,7 @@ class PrometheusNamingConventionsTest {
         when(hikariDataSource.getHikariPoolMXBean()).thenReturn(hikariPoolMXBean);
         
         DatabaseMetricsService databaseMetricsService = new DatabaseMetricsService(meterRegistry, hikariDataSource);
-        HttpMetricsService httpMetricsService = new HttpMetricsService(meterRegistry);
+        HttpMetricsService httpMetricsService = new HttpMetricsService(meterRegistry, null);
         databaseMetricsService.initializeDatabaseMetrics();
         httpMetricsService.registerHttpConnectionPoolMetrics("test-service", "http://test:8080");
 

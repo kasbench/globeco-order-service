@@ -73,7 +73,7 @@ public class SecurityServiceClient {
         try {
             // Update HTTP metrics before making the call
             if (httpMetricsService != null) {
-                httpMetricsService.updateConnectionPoolMetricsFromManager();
+                httpMetricsService.updateServiceSpecificMetrics("security-service", securityServiceUrl);
             }
             
             ResponseEntity<SecurityDTO> response = restTemplate.getForEntity(url, SecurityDTO.class);
@@ -154,7 +154,7 @@ public class SecurityServiceClient {
                 
                 // Update HTTP metrics before making the call
                 if (httpMetricsService != null) {
-                    httpMetricsService.updateConnectionPoolMetricsFromManager();
+                    httpMetricsService.updateServiceSpecificMetrics("security-service", securityServiceUrl);
                 }
                 
                 ResponseEntity<SecuritySearchResponseDTO> response = restTemplate.getForEntity(

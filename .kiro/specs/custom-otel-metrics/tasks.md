@@ -28,11 +28,12 @@
   - Add proper exception handling for database metrics collection
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 5.2_
 
-- [x] 5. Integrate HTTP metrics with service clients
-  - Configure RestTemplate bean with connection pooling and metrics access
-  - Add HTTP metrics collection to PortfolioServiceClient and SecurityServiceClient
-  - Implement protocol detection (http/https) for proper labeling
-  - Ensure HTTP metrics don't interfere with existing service client functionality
+- [x] 5. Integrate HTTP metrics with actual connection pool managers
+  - Configure RestTemplate with PoolingHttpClientConnectionManager for real connection pool access
+  - Update HttpMetricsService to read actual connection pool statistics from Apache HttpClient
+  - Implement service-specific metrics collection using per-route connection statistics
+  - Add connection pool status reporting for debugging and monitoring
+  - Update service clients to use service-specific metrics collection
   - _Requirements: 2.1, 2.2, 2.3, 5.3_
 
 - [x] 6. Implement Prometheus naming conventions and labeling

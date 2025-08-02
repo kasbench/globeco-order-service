@@ -73,7 +73,7 @@ public class PortfolioServiceClient {
         try {
             // Update HTTP metrics before making the call
             if (httpMetricsService != null) {
-                httpMetricsService.updateConnectionPoolMetricsFromManager();
+                httpMetricsService.updateServiceSpecificMetrics("portfolio-service", portfolioServiceUrl);
             }
             
             ResponseEntity<PortfolioDTO> response = restTemplate.getForEntity(url, PortfolioDTO.class);
@@ -154,7 +154,7 @@ public class PortfolioServiceClient {
                 
                 // Update HTTP metrics before making the call
                 if (httpMetricsService != null) {
-                    httpMetricsService.updateConnectionPoolMetricsFromManager();
+                    httpMetricsService.updateServiceSpecificMetrics("portfolio-service", portfolioServiceUrl);
                 }
                 
                 ResponseEntity<PortfolioSearchResponseDTO> response = restTemplate.getForEntity(
