@@ -50,7 +50,7 @@ class HttpRequestMetricsInterceptorTest {
         verify(metricsService).incrementInFlightRequests();
         
         // Verify context is set
-        HttpRequestMetricsInterceptor.RequestTimingContext context = 
+        RequestTimingContext context = 
             HttpRequestMetricsInterceptor.getCurrentContext();
         assertThat(context).isNotNull();
         assertThat(context.getMethod()).isEqualTo("GET");
@@ -71,7 +71,7 @@ class HttpRequestMetricsInterceptorTest {
         // Then
         assertThat(result).isTrue();
         
-        HttpRequestMetricsInterceptor.RequestTimingContext context = 
+        RequestTimingContext context = 
             HttpRequestMetricsInterceptor.getCurrentContext();
         assertThat(context.getPath()).isEqualTo("/api/v1/orders/{id}");
     }
@@ -89,7 +89,7 @@ class HttpRequestMetricsInterceptorTest {
         // Then
         assertThat(result).isTrue();
         
-        HttpRequestMetricsInterceptor.RequestTimingContext context = 
+        RequestTimingContext context = 
             HttpRequestMetricsInterceptor.getCurrentContext();
         assertThat(context.getPath()).isEqualTo("/api/v1/blotters");
     }
@@ -162,8 +162,8 @@ class HttpRequestMetricsInterceptorTest {
         // When - call afterCompletion without preHandle
         interceptor.afterCompletion(request, response, handlerMethod, null);
 
-        // Then - should not crash and should still decrement gauge
-        verify(metricsService).decrementInFlightRequests();
+        // Then - should not crash and should not call any metrics methods since no context exists
+        verify(metricsService, never()).decrementInFlightRequests();
         verify(metricsService, never()).recordRequest(anyString(), anyString(), anyInt(), anyLong());
     }
 
@@ -197,7 +197,7 @@ class HttpRequestMetricsInterceptorTest {
         interceptor.preHandle(request, response, handlerMethod);
 
         // Then
-        HttpRequestMetricsInterceptor.RequestTimingContext context = 
+        RequestTimingContext context = 
             HttpRequestMetricsInterceptor.getCurrentContext();
         assertThat(context.getPath()).isEqualTo("/api/v1/orders");
     }
@@ -212,7 +212,7 @@ class HttpRequestMetricsInterceptorTest {
         interceptor.preHandle(request, response, handlerMethod);
 
         // Then
-        HttpRequestMetricsInterceptor.RequestTimingContext context = 
+        RequestTimingContext context = 
             HttpRequestMetricsInterceptor.getCurrentContext();
         assertThat(context.getPath()).isEqualTo("/unknown");
     }
@@ -258,7 +258,7 @@ class HttpRequestMetricsInterceptorTest {
 
         // When - simulate overlapping requests (though in same thread for test)
         interceptor.preHandle(request1, response1, handlerMethod);
-        HttpRequestMetricsInterceptor.RequestTimingContext context1 = 
+        RequestTimingContext context1 = 
             HttpRequestMetricsInterceptor.getCurrentContext();
         
         // Complete first request
@@ -266,7 +266,7 @@ class HttpRequestMetricsInterceptorTest {
         
         // Start second request
         interceptor.preHandle(request2, response2, handlerMethod);
-        HttpRequestMetricsInterceptor.RequestTimingContext context2 = 
+        RequestTimingContext context2 = 
             HttpRequestMetricsInterceptor.getCurrentContext();
         
         // Complete second request

@@ -3,6 +3,8 @@ package org.kasbench.globeco_order_service.service;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.lang.NonNull;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -49,18 +51,16 @@ public class HttpRequestMetricsInterceptor implements HandlerInterceptor {
      * @return true to continue processing, false to abort
      */
     @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+    public boolean preHandle(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) {
         try {
             // Extract request information
             String method = request.getMethod();
             String path = extractRoutePath(request, handler);
             
             // Create timing context and store in ThreadLocal
-            RequestTimingContext context = new RequestTimingContext(method, path);
+            // The new RequestTimingContext handles in-flight increment automatically
+            RequestTimingContext context = new RequestTimingContext(method, path, metricsService);
             REQUEST_CONTEXT.set(context);
-            
-            // Increment in-flight requests gauge
-            metricsService.incrementInFlightRequests();
             
             log.trace("Started HTTP request metrics collection for {} {}", method, path);
             
@@ -68,6 +68,8 @@ public class HttpRequestMetricsInterceptor implements HandlerInterceptor {
             
         } catch (Exception e) {
             log.warn("Failed to start HTTP request metrics collection: {}", e.getMessage());
+            // Ensure ThreadLocal is cleaned up even if setup fails
+            REQUEST_CONTEXT.remove();
             return true; // Continue processing even if metrics fail
         }
     }
@@ -82,35 +84,34 @@ public class HttpRequestMetricsInterceptor implements HandlerInterceptor {
      * @param ex exception thrown on handler execution, if any
      */
     @Override
-    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, 
-                              Object handler, Exception ex) {
+    public void afterCompletion(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, 
+                              @NonNull Object handler, @Nullable Exception ex) {
+        RequestTimingContext context = null;
         try {
-            RequestTimingContext context = REQUEST_CONTEXT.get();
+            context = REQUEST_CONTEXT.get();
             if (context != null) {
-                // Calculate duration and record metrics
-                long durationNanos = System.nanoTime() - context.getStartTime();
+                // Complete the timing context - this handles metric recording and in-flight decrement
                 int statusCode = response.getStatus();
+                context.complete(statusCode);
                 
-                metricsService.recordRequest(
-                    context.getMethod(), 
-                    context.getPath(), 
-                    statusCode, 
-                    durationNanos
-                );
-                
-                log.trace("Completed HTTP request metrics collection for {} {} - {} ({}ns)", 
-                         context.getMethod(), context.getPath(), statusCode, durationNanos);
+                log.trace("Completed HTTP request metrics collection for {} {} - {}", 
+                         context.getMethod(), context.getPath(), statusCode);
+            } else {
+                log.debug("No RequestTimingContext found in ThreadLocal for request completion");
             }
             
         } catch (Exception e) {
             log.warn("Failed to complete HTTP request metrics collection: {}", e.getMessage());
-        } finally {
-            // Always decrement in-flight requests gauge and clean up ThreadLocal
-            try {
-                metricsService.decrementInFlightRequests();
-            } catch (Exception e) {
-                log.warn("Failed to decrement in-flight requests: {}", e.getMessage());
+            // Ensure cleanup even if completion fails
+            if (context != null) {
+                try {
+                    context.cleanup();
+                } catch (Exception cleanupEx) {
+                    log.warn("Failed to cleanup RequestTimingContext: {}", cleanupEx.getMessage());
+                }
             }
+        } finally {
+            // Always clean up ThreadLocal to prevent memory leaks
             REQUEST_CONTEXT.remove();
         }
     }
@@ -129,13 +130,13 @@ public class HttpRequestMetricsInterceptor implements HandlerInterceptor {
             // Try to get the best matching pattern from HandlerMapping
             String bestMatchingPattern = (String) request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
             if (bestMatchingPattern != null && !bestMatchingPattern.isEmpty()) {
-                return HttpRequestMetricsService.sanitizeRoutePath(bestMatchingPattern);
+                return RoutePatternSanitizer.sanitize(bestMatchingPattern);
             }
             
             // Try to get path within handler mapping
             String pathWithinHandlerMapping = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
             if (pathWithinHandlerMapping != null && !pathWithinHandlerMapping.isEmpty()) {
-                return HttpRequestMetricsService.sanitizeRoutePath(pathWithinHandlerMapping);
+                return RoutePatternSanitizer.sanitize(pathWithinHandlerMapping);
             }
             
             // For HandlerMethod, try to extract pattern from mapping
@@ -144,25 +145,25 @@ public class HttpRequestMetricsInterceptor implements HandlerInterceptor {
                 // Try to get mapping information if available
                 String methodPattern = extractPatternFromHandlerMethod(handlerMethod);
                 if (methodPattern != null) {
-                    return HttpRequestMetricsService.sanitizeRoutePath(methodPattern);
+                    return RoutePatternSanitizer.sanitize(methodPattern);
                 }
             }
             
             // Fallback to request URI (will be sanitized)
             String requestURI = request.getRequestURI();
             if (requestURI != null) {
-                return HttpRequestMetricsService.sanitizeRoutePath(requestURI);
+                return RoutePatternSanitizer.sanitize(requestURI);
             }
             
             // Final fallback
-            return "/unknown";
+            return RoutePatternSanitizer.getUnknownPath();
             
         } catch (Exception e) {
             log.debug("Failed to extract route pattern, using fallback: {}", e.getMessage());
             // Fallback to sanitized request URI
             String requestURI = request.getRequestURI();
             return requestURI != null ? 
-                HttpRequestMetricsService.sanitizeRoutePath(requestURI) : "/unknown";
+                RoutePatternSanitizer.sanitize(requestURI) : RoutePatternSanitizer.getUnknownPath();
         }
     }
 
@@ -185,34 +186,7 @@ public class HttpRequestMetricsInterceptor implements HandlerInterceptor {
         }
     }
 
-    /**
-     * Inner class to hold request timing context information.
-     * Used with ThreadLocal to maintain state across interceptor method calls.
-     * Package-private for testing access.
-     */
-    static class RequestTimingContext {
-        private final long startTime;
-        private final String method;
-        private final String path;
 
-        public RequestTimingContext(String method, String path) {
-            this.startTime = System.nanoTime();
-            this.method = method;
-            this.path = path;
-        }
-
-        public long getStartTime() {
-            return startTime;
-        }
-
-        public String getMethod() {
-            return method;
-        }
-
-        public String getPath() {
-            return path;
-        }
-    }
 
     /**
      * Gets the current request context for testing purposes.

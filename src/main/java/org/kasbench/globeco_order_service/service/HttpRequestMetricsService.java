@@ -13,8 +13,6 @@ import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Pattern;
-import java.util.Arrays;
 
 /**
  * Service for collecting and recording HTTP request metrics.
@@ -37,11 +35,6 @@ public class HttpRequestMetricsService {
     // Cache for metric instances to avoid repeated lookups
     private final ConcurrentHashMap<String, Counter> counterCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Timer> timerCache = new ConcurrentHashMap<>();
-    
-    // Route pattern sanitization
-    private static final Pattern PATH_VARIABLE_PATTERN = Pattern.compile("\\{[^}]+\\}");
-    private static final int MAX_PATH_SEGMENTS = 10;
-    private static final String UNKNOWN_PATH = "/unknown";
 
     @Autowired
     public HttpRequestMetricsService(MeterRegistry meterRegistry) {
@@ -84,10 +77,10 @@ public class HttpRequestMetricsService {
      */
     public void recordRequest(String method, String path, int statusCode, long durationNanos) {
         try {
-            // Sanitize inputs
-            String sanitizedMethod = sanitizeHttpMethod(method);
-            String sanitizedPath = sanitizeRoutePath(path);
-            String statusString = String.valueOf(statusCode);
+            // Sanitize inputs using utility classes
+            String sanitizedMethod = HttpMethodNormalizer.normalize(method);
+            String sanitizedPath = RoutePatternSanitizer.sanitize(path);
+            String statusString = StatusCodeHandler.normalize(statusCode);
             
             // Record counter metric
             recordRequestCounter(sanitizedMethod, sanitizedPath, statusString);
@@ -213,55 +206,18 @@ public class HttpRequestMetricsService {
 
     /**
      * Sanitizes HTTP method to ensure consistent formatting.
-     * Converts to uppercase and handles null/empty values.
+     * Delegates to HttpMethodNormalizer for consistent handling.
      */
     public static String sanitizeHttpMethod(String method) {
-        if (method == null || method.trim().isEmpty()) {
-            return "UNKNOWN";
-        }
-        return method.trim().toUpperCase();
+        return HttpMethodNormalizer.normalize(method);
     }
 
     /**
      * Sanitizes route path to prevent high cardinality issues.
-     * This method:
-     * - Removes query parameters
-     * - Limits path segments to prevent explosion
-     * - Handles null/empty paths
-     * - Preserves route patterns like /api/users/{id}
+     * Delegates to RoutePatternSanitizer for consistent handling.
      */
     public static String sanitizeRoutePath(String path) {
-        if (path == null || path.trim().isEmpty()) {
-            return UNKNOWN_PATH;
-        }
-        
-        String sanitized = path.trim();
-        
-        // Remove query parameters
-        int queryIndex = sanitized.indexOf('?');
-        if (queryIndex > 0) {
-            sanitized = sanitized.substring(0, queryIndex);
-        }
-        
-        // Remove fragment
-        int fragmentIndex = sanitized.indexOf('#');
-        if (fragmentIndex > 0) {
-            sanitized = sanitized.substring(0, fragmentIndex);
-        }
-        
-        // Ensure path starts with /
-        if (!sanitized.startsWith("/")) {
-            sanitized = "/" + sanitized;
-        }
-        
-        // Limit path segments to prevent high cardinality
-        String[] segments = sanitized.split("/");
-        if (segments.length > MAX_PATH_SEGMENTS) {
-            String[] limitedSegments = Arrays.copyOf(segments, MAX_PATH_SEGMENTS);
-            sanitized = String.join("/", limitedSegments) + "/...";
-        }
-        
-        return sanitized;
+        return RoutePatternSanitizer.sanitize(path);
     }
 
     /**
