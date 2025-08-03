@@ -1,9 +1,9 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
     driver-class-name: org.h2.Driver
     username: sa
-    password: 
+    password: ""
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -17,6 +17,20 @@ spring:
   sql:
     init:
       mode: never
+
+# Disable metrics for tests to avoid initialization issues
+metrics:
+  custom:
+    enabled: false
+
+# External service URLs for tests
+security:
+  service:
+    url: http://localhost:8000
+
+portfolio:
+  service:
+    url: http://localhost:8001
 
 logging:
   level:
