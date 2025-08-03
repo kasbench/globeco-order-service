@@ -7,7 +7,7 @@
   - Implement route pattern sanitization utilities to prevent high cardinality
   - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 2. Implement HTTP request metrics interceptor
+- [x] 2. Implement HTTP request metrics interceptor
   - Create HttpRequestMetricsInterceptor class implementing HandlerInterceptor
   - Add preHandle method to start request timing and increment in-flight gauge
   - Implement afterCompletion method to record metrics and decrement in-flight gauge
@@ -20,6 +20,7 @@
   - Register HttpRequestMetricsInterceptor with Spring's InterceptorRegistry
   - Add configuration properties for enabling/disabling HTTP request metrics
   - Integrate with existing MetricsConfiguration and MetricsProperties
+  - Update [the Kubernetes deployment](../../../k8s/deployment.yaml) with new configuration, if required.
   - _Requirements: 4.1, 4.2, 5.1, 5.2, 5.3, 5.4_
 
 - [ ] 4. Implement request timing context and utilities
