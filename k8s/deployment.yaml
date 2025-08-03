@@ -31,6 +31,8 @@ spec:
               value: "true"
             - name: METRICS_CUSTOM_HTTP_ENABLED
               value: "true"
+            - name: METRICS_CUSTOM_HTTP_REQUEST_ENABLED
+              value: "true"
             - name: METRICS_CUSTOM_DATABASE_ENABLED
               value: "true"
             - name: SECURITY_SERVICE_URL

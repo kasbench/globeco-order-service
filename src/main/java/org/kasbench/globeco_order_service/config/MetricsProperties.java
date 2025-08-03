@@ -128,6 +128,45 @@ public class MetricsProperties {
          * Enable HTTP connection establishment timing metrics.
          */
         private boolean connectionTimingEnabled = true;
+
+        /**
+         * HTTP Request Metrics Configuration
+         */
+        private HttpRequestMetrics request = new HttpRequestMetrics();
+    }
+
+    @Data
+    public static class HttpRequestMetrics {
+        /**
+         * Enable/disable HTTP request metrics collection.
+         */
+        private boolean enabled = true;
+
+        /**
+         * Enable route pattern sanitization to prevent high cardinality.
+         */
+        private boolean routeSanitizationEnabled = true;
+
+        /**
+         * Maximum number of path segments to include in route patterns.
+         * Helps prevent metric explosion from deeply nested paths.
+         */
+        private int maxPathSegments = 10;
+
+        /**
+         * Enable caching of metric instances to improve performance.
+         */
+        private boolean metricCachingEnabled = true;
+
+        /**
+         * Maximum size of the metric instance cache.
+         */
+        private int maxCacheSize = 1000;
+
+        /**
+         * Enable detailed logging of HTTP request metrics collection.
+         */
+        private boolean detailedLoggingEnabled = false;
     }
 
     @Data

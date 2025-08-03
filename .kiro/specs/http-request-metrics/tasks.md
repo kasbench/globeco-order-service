@@ -15,7 +15,7 @@
   - Implement route pattern extraction from Spring HandlerMapping
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 3. Create configuration class for HTTP request metrics
+- [x] 3. Create configuration class for HTTP request metrics
   - Implement HttpRequestMetricsConfiguration class with conditional enablement
   - Register HttpRequestMetricsInterceptor with Spring's InterceptorRegistry
   - Add configuration properties for enabling/disabling HTTP request metrics
