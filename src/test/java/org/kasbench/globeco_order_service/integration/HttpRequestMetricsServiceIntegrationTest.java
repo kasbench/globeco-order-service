@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.BeforeEach;
+import org.kasbench.globeco_order_service.config.MetricsProperties;
 import org.kasbench.globeco_order_service.service.HttpRequestMetricsService;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -35,15 +36,43 @@ class HttpRequestMetricsServiceIntegrationTest {
         }
 
         @Bean
-        public HttpRequestMetricsService httpRequestMetricsService(MeterRegistry meterRegistry) {
-            return new HttpRequestMetricsService(meterRegistry);
+        public MetricsProperties metricsProperties() {
+            MetricsProperties properties = new MetricsProperties();
+            properties.setEnabled(true);
+            properties.getHttp().setEnabled(true);
+            properties.getHttp().getRequest().setEnabled(true);
+            properties.getHttp().getRequest().setRouteSanitizationEnabled(true);
+            properties.getHttp().getRequest().setMaxPathSegments(10);
+            properties.getHttp().getRequest().setMetricCachingEnabled(true);
+            properties.getHttp().getRequest().setMaxCacheSize(1000);
+            properties.getHttp().getRequest().setDetailedLoggingEnabled(false);
+            return properties;
+        }
+
+        @Bean
+        public HttpRequestMetricsService httpRequestMetricsService(MeterRegistry meterRegistry, MetricsProperties metricsProperties) {
+            return new HttpRequestMetricsService(meterRegistry, metricsProperties);
         }
     }
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        httpRequestMetricsService = new HttpRequestMetricsService(meterRegistry);
+        MetricsProperties metricsProperties = createDefaultMetricsProperties();
+        httpRequestMetricsService = new HttpRequestMetricsService(meterRegistry, metricsProperties);
+    }
+
+    private MetricsProperties createDefaultMetricsProperties() {
+        MetricsProperties properties = new MetricsProperties();
+        properties.setEnabled(true);
+        properties.getHttp().setEnabled(true);
+        properties.getHttp().getRequest().setEnabled(true);
+        properties.getHttp().getRequest().setRouteSanitizationEnabled(true);
+        properties.getHttp().getRequest().setMaxPathSegments(10);
+        properties.getHttp().getRequest().setMetricCachingEnabled(true);
+        properties.getHttp().getRequest().setMaxCacheSize(1000);
+        properties.getHttp().getRequest().setDetailedLoggingEnabled(false);
+        return properties;
     }
 
     @Test

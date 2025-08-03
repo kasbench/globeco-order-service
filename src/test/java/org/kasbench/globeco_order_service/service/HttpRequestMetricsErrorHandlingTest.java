@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.kasbench.globeco_order_service.config.MetricsProperties;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -32,18 +33,33 @@ class HttpRequestMetricsErrorHandlingTest {
     private HttpRequestMetricsInterceptor interceptor;
     private HttpRequestMetricsService realMetricsService;
     private MeterRegistry meterRegistry;
+    private MetricsProperties metricsProperties;
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        realMetricsService = new HttpRequestMetricsService(meterRegistry);
-        interceptor = new HttpRequestMetricsInterceptor(mockMetricsService);
+        metricsProperties = createDefaultMetricsProperties();
+        realMetricsService = new HttpRequestMetricsService(meterRegistry, metricsProperties);
+        interceptor = new HttpRequestMetricsInterceptor(mockMetricsService, metricsProperties);
+    }
+
+    private MetricsProperties createDefaultMetricsProperties() {
+        MetricsProperties properties = new MetricsProperties();
+        properties.setEnabled(true);
+        properties.getHttp().setEnabled(true);
+        properties.getHttp().getRequest().setEnabled(true);
+        properties.getHttp().getRequest().setRouteSanitizationEnabled(true);
+        properties.getHttp().getRequest().setMaxPathSegments(10);
+        properties.getHttp().getRequest().setMetricCachingEnabled(true);
+        properties.getHttp().getRequest().setMaxCacheSize(1000);
+        properties.getHttp().getRequest().setDetailedLoggingEnabled(false);
+        return properties;
     }
 
     @Test
     void interceptor_WithNullMetricsService_ShouldNotCrash() {
         // Given
-        HttpRequestMetricsInterceptor nullServiceInterceptor = new HttpRequestMetricsInterceptor(null);
+        HttpRequestMetricsInterceptor nullServiceInterceptor = new HttpRequestMetricsInterceptor(null, metricsProperties);
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/orders");
         MockHttpServletResponse response = new MockHttpServletResponse();
         

@@ -1,6 +1,7 @@
 package org.kasbench.globeco_order_service.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.kasbench.globeco_order_service.config.MetricsProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.lang.NonNull;
@@ -26,19 +27,29 @@ import jakarta.servlet.http.HttpServletResponse;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "metrics.custom.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(
+    value = {
+        "metrics.custom.enabled",
+        "metrics.custom.http.enabled", 
+        "metrics.custom.http.request.enabled"
+    },
+    havingValue = "true"
+)
 public class HttpRequestMetricsInterceptor implements HandlerInterceptor {
 
     private final HttpRequestMetricsService metricsService;
+    private final MetricsProperties metricsProperties;
     
     // ThreadLocal to store request timing context across interceptor methods
     private static final ThreadLocal<RequestTimingContext> REQUEST_CONTEXT = new ThreadLocal<>();
 
     @Autowired
-    public HttpRequestMetricsInterceptor(HttpRequestMetricsService metricsService) {
+    public HttpRequestMetricsInterceptor(HttpRequestMetricsService metricsService, MetricsProperties metricsProperties) {
         this.metricsService = metricsService;
-        log.info("HttpRequestMetricsInterceptor initialized with metrics service: {}", 
-                metricsService != null ? "enabled" : "disabled");
+        this.metricsProperties = metricsProperties;
+        log.info("HttpRequestMetricsInterceptor initialized with metrics service: {}, detailed logging: {}", 
+                metricsService != null ? "enabled" : "disabled",
+                metricsProperties != null && metricsProperties.getHttp().getRequest().isDetailedLoggingEnabled());
     }
 
     /**
@@ -74,7 +85,9 @@ public class HttpRequestMetricsInterceptor implements HandlerInterceptor {
             RequestTimingContext context = new RequestTimingContext(method, path, metricsService);
             REQUEST_CONTEXT.set(context);
             
-            log.trace("Started HTTP request metrics collection for {} {}", method, path);
+            if (metricsProperties.getHttp().getRequest().isDetailedLoggingEnabled()) {
+                log.debug("Started HTTP request metrics collection for {} {}", method, path);
+            }
             
             return true; // Continue processing
             
@@ -116,8 +129,10 @@ public class HttpRequestMetricsInterceptor implements HandlerInterceptor {
                 // Complete the timing context - this handles metric recording and in-flight decrement
                 context.complete(statusCode);
                 
-                log.trace("Completed HTTP request metrics collection for {} {} - {}", 
-                         context.getMethod(), context.getPath(), statusCode);
+                if (metricsProperties.getHttp().getRequest().isDetailedLoggingEnabled()) {
+                    log.debug("Completed HTTP request metrics collection for {} {} - {}", 
+                             context.getMethod(), context.getPath(), statusCode);
+                }
             } else {
                 // Handle case where context is missing - this could happen if preHandle failed
                 log.debug("No RequestTimingContext found in ThreadLocal for request completion - " +

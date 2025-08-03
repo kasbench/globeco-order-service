@@ -25,7 +25,14 @@ import jakarta.annotation.PostConstruct;
  */
 @Slf4j
 @Configuration
-@ConditionalOnProperty(name = "metrics.custom.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(
+    value = {
+        "metrics.custom.enabled",
+        "metrics.custom.http.enabled", 
+        "metrics.custom.http.request.enabled"
+    },
+    havingValue = "true"
+)
 public class HttpRequestMetricsConfiguration implements WebMvcConfigurer {
 
     private final HttpRequestMetricsInterceptor httpRequestMetricsInterceptor;

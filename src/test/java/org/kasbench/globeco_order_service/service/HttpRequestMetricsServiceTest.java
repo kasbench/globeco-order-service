@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.kasbench.globeco_order_service.config.MetricsProperties;
 
 import java.util.concurrent.TimeUnit;
 
@@ -20,12 +21,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 class HttpRequestMetricsServiceTest {
 
     private MeterRegistry meterRegistry;
+    private MetricsProperties metricsProperties;
     private HttpRequestMetricsService metricsService;
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        metricsService = new HttpRequestMetricsService(meterRegistry);
+        metricsProperties = createDefaultMetricsProperties();
+        metricsService = new HttpRequestMetricsService(meterRegistry, metricsProperties);
+    }
+
+    private MetricsProperties createDefaultMetricsProperties() {
+        MetricsProperties properties = new MetricsProperties();
+        properties.setEnabled(true);
+        properties.getHttp().setEnabled(true);
+        properties.getHttp().getRequest().setEnabled(true);
+        properties.getHttp().getRequest().setRouteSanitizationEnabled(true);
+        properties.getHttp().getRequest().setMaxPathSegments(10);
+        properties.getHttp().getRequest().setMetricCachingEnabled(true);
+        properties.getHttp().getRequest().setMaxCacheSize(1000);
+        properties.getHttp().getRequest().setDetailedLoggingEnabled(false);
+        return properties;
     }
 
     @Test

@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
+import org.kasbench.globeco_order_service.config.MetricsProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -26,10 +27,18 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "metrics.custom.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(
+    value = {
+        "metrics.custom.enabled",
+        "metrics.custom.http.enabled", 
+        "metrics.custom.http.request.enabled"
+    },
+    havingValue = "true"
+)
 public class HttpRequestMetricsService {
 
     private final MeterRegistry meterRegistry;
+    private final MetricsProperties metricsProperties;
     private final AtomicInteger inFlightRequests;
     
     // Cache for metric instances to avoid repeated lookups
@@ -37,17 +46,56 @@ public class HttpRequestMetricsService {
     private final ConcurrentHashMap<String, Timer> timerCache = new ConcurrentHashMap<>();
 
     @Autowired
-    public HttpRequestMetricsService(MeterRegistry meterRegistry) {
-        log.info("HttpRequestMetricsService constructor called with MeterRegistry: {}", 
-                meterRegistry != null ? meterRegistry.getClass().getSimpleName() : "null");
+    public HttpRequestMetricsService(MeterRegistry meterRegistry, MetricsProperties metricsProperties) {
+        log.info("HttpRequestMetricsService constructor called with MeterRegistry: {}, MetricsProperties: {}", 
+                meterRegistry != null ? meterRegistry.getClass().getSimpleName() : "null",
+                metricsProperties != null ? "configured" : "null");
         
         this.meterRegistry = meterRegistry;
+        this.metricsProperties = metricsProperties;
         this.inFlightRequests = new AtomicInteger(0);
+        
+        // Validate configuration
+        validateConfiguration();
         
         // Register the in-flight requests gauge
         registerInFlightGauge();
         
-        log.info("HttpRequestMetricsService initialized successfully");
+        log.info("HttpRequestMetricsService initialized successfully with HTTP request metrics enabled: {}", 
+                metricsProperties.getHttp().getRequest().isEnabled());
+    }
+
+    /**
+     * Validates the configuration properties and applies defaults where necessary.
+     */
+    private void validateConfiguration() {
+        if (metricsProperties == null) {
+            throw new IllegalStateException("MetricsProperties is required but not available");
+        }
+        
+        if (!metricsProperties.isEnabled()) {
+            log.warn("Custom metrics are disabled globally, HTTP request metrics may not function properly");
+        }
+        
+        if (!metricsProperties.getHttp().isEnabled()) {
+            log.warn("HTTP metrics are disabled, HTTP request metrics may not function properly");
+        }
+        
+        if (!metricsProperties.getHttp().getRequest().isEnabled()) {
+            log.warn("HTTP request metrics are disabled in configuration");
+        }
+        
+        // Validate cache configuration
+        MetricsProperties.HttpRequestMetrics requestConfig = metricsProperties.getHttp().getRequest();
+        if (requestConfig.isMetricCachingEnabled() && requestConfig.getMaxCacheSize() <= 0) {
+            log.warn("Invalid cache size configuration: {}, using default", requestConfig.getMaxCacheSize());
+        }
+        
+        if (requestConfig.getMaxPathSegments() <= 0) {
+            log.warn("Invalid max path segments configuration: {}, using default", requestConfig.getMaxPathSegments());
+        }
+        
+        log.debug("HTTP request metrics configuration validation completed");
     }
 
     /**
@@ -123,9 +171,22 @@ public class HttpRequestMetricsService {
      */
     private boolean recordRequestCounter(String method, String path, String status) {
         try {
-            String cacheKey = buildCacheKey("counter", method, path, status);
-            Counter counter = counterCache.computeIfAbsent(cacheKey, 
-                k -> createRequestCounterSafely(method, path, status));
+            Counter counter;
+            
+            if (metricsProperties.getHttp().getRequest().isMetricCachingEnabled()) {
+                // Check cache size limit
+                if (counterCache.size() >= metricsProperties.getHttp().getRequest().getMaxCacheSize()) {
+                    log.debug("Counter cache size limit reached, creating counter without caching");
+                    counter = createRequestCounterSafely(method, path, status);
+                } else {
+                    String cacheKey = buildCacheKey("counter", method, path, status);
+                    counter = counterCache.computeIfAbsent(cacheKey, 
+                        k -> createRequestCounterSafely(method, path, status));
+                }
+            } else {
+                // Caching disabled, create counter directly
+                counter = createRequestCounterSafely(method, path, status);
+            }
             
             if (counter != null) {
                 counter.increment();
@@ -153,9 +214,22 @@ public class HttpRequestMetricsService {
      */
     private boolean recordRequestDuration(String method, String path, String status, long durationNanos) {
         try {
-            String cacheKey = buildCacheKey("timer", method, path, status);
-            Timer timer = timerCache.computeIfAbsent(cacheKey, 
-                k -> createRequestTimerSafely(method, path, status));
+            Timer timer;
+            
+            if (metricsProperties.getHttp().getRequest().isMetricCachingEnabled()) {
+                // Check cache size limit
+                if (timerCache.size() >= metricsProperties.getHttp().getRequest().getMaxCacheSize()) {
+                    log.debug("Timer cache size limit reached, creating timer without caching");
+                    timer = createRequestTimerSafely(method, path, status);
+                } else {
+                    String cacheKey = buildCacheKey("timer", method, path, status);
+                    timer = timerCache.computeIfAbsent(cacheKey, 
+                        k -> createRequestTimerSafely(method, path, status));
+                }
+            } else {
+                // Caching disabled, create timer directly
+                timer = createRequestTimerSafely(method, path, status);
+            }
             
             if (timer != null) {
                 timer.record(durationNanos, TimeUnit.NANOSECONDS);
@@ -389,7 +463,13 @@ public class HttpRequestMetricsService {
      */
     private String sanitizePathWithFallback(String path) {
         try {
-            return RoutePatternSanitizer.sanitize(path);
+            if (metricsProperties.getHttp().getRequest().isRouteSanitizationEnabled()) {
+                return RoutePatternSanitizer.sanitizeWithMaxSegments(path, 
+                    metricsProperties.getHttp().getRequest().getMaxPathSegments());
+            } else {
+                // If sanitization is disabled, still do basic cleanup
+                return path != null ? path : RoutePatternSanitizer.getUnknownPath();
+            }
         } catch (Exception e) {
             log.debug("Failed to sanitize path '{}', using fallback: {}", path, e.getMessage());
             return RoutePatternSanitizer.getUnknownPath();

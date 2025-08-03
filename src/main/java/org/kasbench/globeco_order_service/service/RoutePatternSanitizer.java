@@ -299,6 +299,99 @@ public final class RoutePatternSanitizer {
     }
 
     /**
+     * Sanitizes a route path with configurable maximum path segments.
+     * This method allows customization of the path segment limit.
+     * 
+     * @param path the original path to sanitize
+     * @param maxPathSegments maximum number of path segments to allow
+     * @return sanitized path suitable for metrics labeling
+     */
+    public static String sanitizeWithMaxSegments(String path, int maxPathSegments) {
+        // Handle null/empty cases first
+        if (path == null) {
+            log.trace("Path is null, using unknown path fallback");
+            return UNKNOWN_PATH;
+        }
+        
+        String trimmedPath = path.trim();
+        if (trimmedPath.isEmpty()) {
+            log.trace("Path is empty after trimming, using unknown path fallback");
+            return UNKNOWN_PATH;
+        }
+        
+        // Use configured max segments or default if invalid
+        int effectiveMaxSegments = maxPathSegments > 0 ? maxPathSegments : MAX_PATH_SEGMENTS;
+        
+        try {
+            String sanitized = performSanitizationWithMaxSegments(trimmedPath, effectiveMaxSegments);
+            return sanitized;
+            
+        } catch (Exception e) {
+            log.warn("Failed to sanitize path '{}' with max segments {}, using fallback: {}", 
+                    path, effectiveMaxSegments, e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Path sanitization error details", e);
+            }
+            return UNKNOWN_PATH;
+        }
+    }
+
+    /**
+     * Performs sanitization with configurable maximum path segments.
+     * 
+     * @param path the trimmed path to sanitize
+     * @param maxSegments maximum number of path segments
+     * @return sanitized path
+     */
+    private static String performSanitizationWithMaxSegments(String path, int maxSegments) {
+        if (path == null || path.isEmpty()) {
+            return UNKNOWN_PATH;
+        }
+        
+        String sanitized = path;
+        
+        try {
+            // Remove query parameters
+            int queryIndex = sanitized.indexOf('?');
+            if (queryIndex > 0) {
+                sanitized = sanitized.substring(0, queryIndex);
+            }
+            
+            // Remove fragments
+            int fragmentIndex = sanitized.indexOf('#');
+            if (fragmentIndex > 0) {
+                sanitized = sanitized.substring(0, fragmentIndex);
+            }
+            
+            // Normalize multiple slashes
+            sanitized = MULTIPLE_SLASHES_PATTERN.matcher(sanitized).replaceAll("/");
+            
+            // Ensure path starts with /
+            if (!sanitized.startsWith("/")) {
+                sanitized = "/" + sanitized;
+            }
+            
+            // Remove trailing slash unless it's the root path
+            if (sanitized.length() > 1 && sanitized.endsWith("/")) {
+                sanitized = sanitized.substring(0, sanitized.length() - 1);
+            }
+            
+            // Limit path segments
+            String[] segments = sanitized.split("/");
+            if (segments.length > maxSegments) {
+                String[] limitedSegments = Arrays.copyOf(segments, maxSegments);
+                sanitized = String.join("/", limitedSegments) + TRUNCATION_SUFFIX;
+            }
+            
+        } catch (Exception e) {
+            log.debug("Failed to sanitize path segments for '{}': {}", sanitized, e.getMessage());
+            return UNKNOWN_PATH;
+        }
+        
+        return sanitized;
+    }
+
+    /**
      * Gets the unknown path constant used for fallbacks.
      * 
      * @return unknown path string

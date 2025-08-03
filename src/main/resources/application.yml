@@ -24,6 +24,20 @@ service:
     connect: 5000  # 5 seconds in milliseconds
     read: 30000    # 30 seconds in milliseconds
 
+# Metrics Configuration
+metrics:
+  custom:
+    enabled: true
+    http:
+      enabled: true
+      request:
+        enabled: true
+        route-sanitization-enabled: true
+        max-path-segments: 10
+        metric-caching-enabled: true
+        max-cache-size: 1000
+        detailed-logging-enabled: false
+
 # Logging Configuration
 logging:
   level:
