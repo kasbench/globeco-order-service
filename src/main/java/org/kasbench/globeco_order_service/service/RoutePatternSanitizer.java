@@ -46,28 +46,51 @@ public final class RoutePatternSanitizer {
      * @return sanitized path suitable for metrics labeling
      */
     public static String sanitize(String path) {
-        if (path == null || path.trim().isEmpty()) {
+        // Handle null/empty cases first
+        if (path == null) {
+            log.trace("Path is null, using unknown path fallback");
             return UNKNOWN_PATH;
         }
         
-        // Check cache first
-        String cachedResult = SANITIZATION_CACHE.get(path);
-        if (cachedResult != null) {
-            return cachedResult;
+        String trimmedPath = path.trim();
+        if (trimmedPath.isEmpty()) {
+            log.trace("Path is empty after trimming, using unknown path fallback");
+            return UNKNOWN_PATH;
+        }
+        
+        // Check cache first with error handling
+        try {
+            String cachedResult = SANITIZATION_CACHE.get(path);
+            if (cachedResult != null) {
+                log.trace("Using cached sanitization result for path: {}", path);
+                return cachedResult;
+            }
+        } catch (Exception cacheError) {
+            log.debug("Cache lookup failed for path '{}': {}", path, cacheError.getMessage());
+            // Continue with sanitization even if cache fails
         }
         
         try {
-            String sanitized = performSanitization(path.trim());
+            String sanitized = performSanitization(trimmedPath);
             
-            // Cache the result if cache is not too large
-            if (SANITIZATION_CACHE.size() < MAX_CACHE_SIZE) {
-                SANITIZATION_CACHE.put(path, sanitized);
+            // Cache the result if cache is not too large and caching doesn't fail
+            try {
+                if (SANITIZATION_CACHE.size() < MAX_CACHE_SIZE) {
+                    SANITIZATION_CACHE.put(path, sanitized);
+                    log.trace("Cached sanitization result for path: {}", path);
+                }
+            } catch (Exception cacheError) {
+                log.debug("Failed to cache sanitization result for path '{}': {}", path, cacheError.getMessage());
+                // Continue even if caching fails
             }
             
             return sanitized;
             
         } catch (Exception e) {
             log.warn("Failed to sanitize path '{}', using fallback: {}", path, e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Path sanitization error details", e);
+            }
             return UNKNOWN_PATH;
         }
     }
@@ -79,35 +102,69 @@ public final class RoutePatternSanitizer {
      * @return sanitized path
      */
     private static String performSanitization(String path) {
+        if (path == null || path.isEmpty()) {
+            return UNKNOWN_PATH;
+        }
+        
         String sanitized = path;
         
-        // Remove query parameters
-        int queryIndex = sanitized.indexOf('?');
-        if (queryIndex > 0) {
-            sanitized = sanitized.substring(0, queryIndex);
+        try {
+            // Remove query parameters
+            int queryIndex = sanitized.indexOf('?');
+            if (queryIndex > 0) {
+                sanitized = sanitized.substring(0, queryIndex);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to remove query parameters from '{}': {}", sanitized, e.getMessage());
         }
         
-        // Remove fragment
-        int fragmentIndex = sanitized.indexOf('#');
-        if (fragmentIndex > 0) {
-            sanitized = sanitized.substring(0, fragmentIndex);
+        try {
+            // Remove fragment
+            int fragmentIndex = sanitized.indexOf('#');
+            if (fragmentIndex > 0) {
+                sanitized = sanitized.substring(0, fragmentIndex);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to remove fragment from '{}': {}", sanitized, e.getMessage());
         }
         
-        // Normalize multiple slashes to single slash
-        sanitized = MULTIPLE_SLASHES_PATTERN.matcher(sanitized).replaceAll("/");
-        
-        // Ensure path starts with /
-        if (!sanitized.startsWith("/")) {
-            sanitized = "/" + sanitized;
+        try {
+            // Normalize multiple slashes to single slash
+            sanitized = MULTIPLE_SLASHES_PATTERN.matcher(sanitized).replaceAll("/");
+        } catch (Exception e) {
+            log.debug("Failed to normalize slashes in '{}': {}", sanitized, e.getMessage());
         }
         
-        // Remove trailing slash unless it's the root path
-        if (sanitized.length() > 1 && sanitized.endsWith("/")) {
-            sanitized = sanitized.substring(0, sanitized.length() - 1);
+        try {
+            // Ensure path starts with /
+            if (!sanitized.startsWith("/")) {
+                sanitized = "/" + sanitized;
+            }
+        } catch (Exception e) {
+            log.debug("Failed to ensure leading slash for '{}': {}", sanitized, e.getMessage());
         }
         
-        // Limit path segments to prevent high cardinality
-        sanitized = limitPathSegments(sanitized);
+        try {
+            // Remove trailing slash unless it's the root path
+            if (sanitized.length() > 1 && sanitized.endsWith("/")) {
+                sanitized = sanitized.substring(0, sanitized.length() - 1);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to remove trailing slash from '{}': {}", sanitized, e.getMessage());
+        }
+        
+        try {
+            // Limit path segments to prevent high cardinality
+            sanitized = limitPathSegments(sanitized);
+        } catch (Exception e) {
+            log.debug("Failed to limit path segments for '{}': {}", sanitized, e.getMessage());
+        }
+        
+        // Final validation
+        if (sanitized == null || sanitized.trim().isEmpty()) {
+            log.debug("Sanitization resulted in null/empty path, using fallback");
+            return UNKNOWN_PATH;
+        }
         
         return sanitized;
     }
@@ -119,15 +176,28 @@ public final class RoutePatternSanitizer {
      * @return path with limited segments
      */
     private static String limitPathSegments(String path) {
-        String[] segments = path.split("/");
-        
-        if (segments.length <= MAX_PATH_SEGMENTS) {
-            return path;
+        if (path == null || path.isEmpty()) {
+            return UNKNOWN_PATH;
         }
         
-        // Take first MAX_PATH_SEGMENTS segments and add truncation indicator
-        String[] limitedSegments = Arrays.copyOf(segments, MAX_PATH_SEGMENTS);
-        return String.join("/", limitedSegments) + TRUNCATION_SUFFIX;
+        try {
+            String[] segments = path.split("/");
+            
+            if (segments.length <= MAX_PATH_SEGMENTS) {
+                return path;
+            }
+            
+            // Take first MAX_PATH_SEGMENTS segments and add truncation indicator
+            String[] limitedSegments = Arrays.copyOf(segments, MAX_PATH_SEGMENTS);
+            String result = String.join("/", limitedSegments) + TRUNCATION_SUFFIX;
+            
+            log.debug("Limited path segments from {} to {} segments: {}", segments.length, MAX_PATH_SEGMENTS, result);
+            return result;
+            
+        } catch (Exception e) {
+            log.debug("Failed to limit path segments for '{}': {}", path, e.getMessage());
+            return path; // Return original path if limiting fails
+        }
     }
 
     /**

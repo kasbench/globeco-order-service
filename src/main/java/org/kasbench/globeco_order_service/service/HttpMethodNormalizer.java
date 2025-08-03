@@ -44,28 +44,51 @@ public final class HttpMethodNormalizer {
      * @return normalized HTTP method in uppercase
      */
     public static String normalize(String method) {
-        if (method == null || method.trim().isEmpty()) {
+        // Handle null/empty cases first
+        if (method == null) {
+            log.trace("Method is null, using unknown method fallback");
             return UNKNOWN_METHOD;
         }
         
-        // Check cache first
-        String cachedResult = NORMALIZATION_CACHE.get(method);
-        if (cachedResult != null) {
-            return cachedResult;
+        String trimmedMethod = method.trim();
+        if (trimmedMethod.isEmpty()) {
+            log.trace("Method is empty after trimming, using unknown method fallback");
+            return UNKNOWN_METHOD;
+        }
+        
+        // Check cache first with error handling
+        try {
+            String cachedResult = NORMALIZATION_CACHE.get(method);
+            if (cachedResult != null) {
+                log.trace("Using cached normalization result for method: {}", method);
+                return cachedResult;
+            }
+        } catch (Exception cacheError) {
+            log.debug("Cache lookup failed for method '{}': {}", method, cacheError.getMessage());
+            // Continue with normalization even if cache fails
         }
         
         try {
-            String normalized = performNormalization(method.trim());
+            String normalized = performNormalization(trimmedMethod);
             
-            // Cache the result if cache is not too large
-            if (NORMALIZATION_CACHE.size() < MAX_CACHE_SIZE) {
-                NORMALIZATION_CACHE.put(method, normalized);
+            // Cache the result if cache is not too large and caching doesn't fail
+            try {
+                if (NORMALIZATION_CACHE.size() < MAX_CACHE_SIZE) {
+                    NORMALIZATION_CACHE.put(method, normalized);
+                    log.trace("Cached normalization result for method: {}", method);
+                }
+            } catch (Exception cacheError) {
+                log.debug("Failed to cache normalization result for method '{}': {}", method, cacheError.getMessage());
+                // Continue even if caching fails
             }
             
             return normalized;
             
         } catch (Exception e) {
             log.warn("Failed to normalize HTTP method '{}', using fallback: {}", method, e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Method normalization error details", e);
+            }
             return UNKNOWN_METHOD;
         }
     }
@@ -77,21 +100,49 @@ public final class HttpMethodNormalizer {
      * @return normalized method
      */
     private static String performNormalization(String method) {
-        // Convert to uppercase
-        String normalized = method.toUpperCase();
-        
-        // Validate against standard methods and handle edge cases
-        if (isStandardHttpMethod(normalized)) {
-            return normalized;
+        if (method == null || method.isEmpty()) {
+            return UNKNOWN_METHOD;
         }
         
-        // Handle common variations and typos
-        normalized = handleCommonVariations(normalized);
+        String normalized;
         
-        // If still not standard, check if it's a reasonable custom method
-        if (isReasonableCustomMethod(normalized)) {
-            log.debug("Using non-standard HTTP method: {}", normalized);
-            return normalized;
+        try {
+            // Convert to uppercase
+            normalized = method.toUpperCase();
+        } catch (Exception e) {
+            log.debug("Failed to convert method '{}' to uppercase: {}", method, e.getMessage());
+            return UNKNOWN_METHOD;
+        }
+        
+        try {
+            // Validate against standard methods and handle edge cases
+            if (isStandardHttpMethod(normalized)) {
+                return normalized;
+            }
+        } catch (Exception e) {
+            log.debug("Failed to check if method '{}' is standard: {}", normalized, e.getMessage());
+        }
+        
+        try {
+            // Handle common variations and typos
+            normalized = handleCommonVariations(normalized);
+            
+            // Check again after handling variations
+            if (isStandardHttpMethod(normalized)) {
+                return normalized;
+            }
+        } catch (Exception e) {
+            log.debug("Failed to handle variations for method '{}': {}", normalized, e.getMessage());
+        }
+        
+        try {
+            // If still not standard, check if it's a reasonable custom method
+            if (isReasonableCustomMethod(normalized)) {
+                log.debug("Using non-standard HTTP method: {}", normalized);
+                return normalized;
+            }
+        } catch (Exception e) {
+            log.debug("Failed to validate custom method '{}': {}", normalized, e.getMessage());
         }
         
         // Fallback for unrecognized methods

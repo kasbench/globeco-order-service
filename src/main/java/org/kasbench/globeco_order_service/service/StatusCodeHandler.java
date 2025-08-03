@@ -37,24 +37,39 @@ public final class StatusCodeHandler {
      * @return normalized status code as string
      */
     public static String normalize(int statusCode) {
-        // Check cache first
-        String cachedResult = NORMALIZATION_CACHE.get(statusCode);
-        if (cachedResult != null) {
-            return cachedResult;
+        // Check cache first with error handling
+        try {
+            String cachedResult = NORMALIZATION_CACHE.get(statusCode);
+            if (cachedResult != null) {
+                log.trace("Using cached normalization result for status code: {}", statusCode);
+                return cachedResult;
+            }
+        } catch (Exception cacheError) {
+            log.debug("Cache lookup failed for status code '{}': {}", statusCode, cacheError.getMessage());
+            // Continue with normalization even if cache fails
         }
         
         try {
             String normalized = performNormalization(statusCode);
             
-            // Cache the result if cache is not too large
-            if (NORMALIZATION_CACHE.size() < MAX_CACHE_SIZE) {
-                NORMALIZATION_CACHE.put(statusCode, normalized);
+            // Cache the result if cache is not too large and caching doesn't fail
+            try {
+                if (NORMALIZATION_CACHE.size() < MAX_CACHE_SIZE) {
+                    NORMALIZATION_CACHE.put(statusCode, normalized);
+                    log.trace("Cached normalization result for status code: {}", statusCode);
+                }
+            } catch (Exception cacheError) {
+                log.debug("Failed to cache normalization result for status code '{}': {}", statusCode, cacheError.getMessage());
+                // Continue even if caching fails
             }
             
             return normalized;
             
         } catch (Exception e) {
             log.warn("Failed to normalize status code '{}', using fallback: {}", statusCode, e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Status code normalization error details", e);
+            }
             return UNKNOWN_STATUS;
         }
     }
@@ -66,25 +81,32 @@ public final class StatusCodeHandler {
      * @return normalized status code
      */
     private static String performNormalization(int statusCode) {
-        // Handle special cases
-        if (statusCode <= 0) {
+        try {
+            // Handle special cases
+            if (statusCode <= 0) {
+                log.debug("Status code {} is non-positive, using unknown status", statusCode);
+                return UNKNOWN_STATUS;
+            }
+            
+            // Validate against HTTP status code ranges
+            if (isValidHttpStatusCode(statusCode)) {
+                return String.valueOf(statusCode);
+            }
+            
+            // Handle edge cases for non-standard but reasonable codes
+            if (statusCode >= 100 && statusCode <= 999) {
+                log.debug("Using non-standard HTTP status code: {}", statusCode);
+                return String.valueOf(statusCode);
+            }
+            
+            // Fallback for invalid codes
+            log.debug("Invalid HTTP status code '{}', using fallback", statusCode);
+            return UNKNOWN_STATUS;
+            
+        } catch (Exception e) {
+            log.debug("Exception during status code normalization for '{}': {}", statusCode, e.getMessage());
             return UNKNOWN_STATUS;
         }
-        
-        // Validate against HTTP status code ranges
-        if (isValidHttpStatusCode(statusCode)) {
-            return String.valueOf(statusCode);
-        }
-        
-        // Handle edge cases for non-standard but reasonable codes
-        if (statusCode >= 100 && statusCode <= 999) {
-            log.debug("Using non-standard HTTP status code: {}", statusCode);
-            return String.valueOf(statusCode);
-        }
-        
-        // Fallback for invalid codes
-        log.debug("Invalid HTTP status code '{}', using fallback", statusCode);
-        return UNKNOWN_STATUS;
     }
 
     /**
