@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.PostConstruct;
 import java.net.URI;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
@@ -30,7 +29,7 @@ import jakarta.annotation.PreDestroy;
  * connection pool integration when Apache HttpClient is properly configured.
  */
 @Service
-@ConditionalOnProperty(name = "metrics.custom.http.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(name = "metrics.custom.enabled", havingValue = "true", matchIfMissing = false)
 public class HttpMetricsService {
     private static final Logger logger = LoggerFactory.getLogger(HttpMetricsService.class);
 
@@ -42,6 +41,10 @@ public class HttpMetricsService {
 
     public HttpMetricsService(MeterRegistry meterRegistry,
             @Autowired(required = false) PoolingHttpClientConnectionManager connectionManager) {
+        logger.info("HttpMetricsService constructor called - MeterRegistry: {}, ConnectionManager: {}",
+                meterRegistry != null ? meterRegistry.getClass().getSimpleName() : "null",
+                connectionManager != null ? "available" : "null");
+
         this.meterRegistry = meterRegistry;
         this.connectionManager = connectionManager;
         this.serviceProtocols = new ConcurrentHashMap<>();
@@ -51,6 +54,8 @@ public class HttpMetricsService {
             t.setDaemon(true);
             return t;
         });
+
+        logger.info("HttpMetricsService constructor completed successfully");
     }
 
     /**
@@ -70,6 +75,13 @@ public class HttpMetricsService {
 
         // Use trimmed service name for consistency
         String trimmedServiceName = serviceName.trim();
+
+        // Check if metrics are already registered for this service
+        if (serviceMetrics.containsKey(trimmedServiceName)) {
+            logger.debug("HTTP metrics already registered for service: {}, skipping duplicate registration",
+                    trimmedServiceName);
+            return;
+        }
 
         try {
             // Determine protocol from service URL
@@ -101,29 +113,55 @@ public class HttpMetricsService {
             HttpConnectionPoolMetrics metrics,
             String protocol) {
 
-        // Total connections gauge
-        Gauge.builder("http_pool_connections_total", metrics, m -> m.getTotalConnections())
-                .description("Maximum HTTP connections allowed in the pool")
-                .tag("service", serviceName)
-                .tag("protocol", protocol)
-                .register(meterRegistry);
+        try {
+            // Check if gauges already exist before registering
+            String totalMetricName = "http_pool_connections_total";
+            if (meterRegistry.find(totalMetricName).tag("service", serviceName).tag("protocol", protocol)
+                    .gauge() == null) {
+                Gauge.builder(totalMetricName, metrics, m -> m.getTotalConnections())
+                        .description("Maximum HTTP connections allowed in the pool")
+                        .tag("service", serviceName)
+                        .tag("protocol", protocol)
+                        .register(meterRegistry);
+            } else {
+                logger.debug("Gauge {} already exists for service: {}, protocol: {}", totalMetricName, serviceName,
+                        protocol);
+            }
 
-        // Active connections gauge
-        Gauge.builder("http_pool_connections_active", metrics, m -> m.getActiveConnections())
-                .description("Currently active HTTP connections in the pool")
-                .tag("service", serviceName)
-                .tag("protocol", protocol)
-                .register(meterRegistry);
+            String activeMetricName = "http_pool_connections_active";
+            if (meterRegistry.find(activeMetricName).tag("service", serviceName).tag("protocol", protocol)
+                    .gauge() == null) {
+                Gauge.builder(activeMetricName, metrics, m -> m.getActiveConnections())
+                        .description("Currently active HTTP connections in the pool")
+                        .tag("service", serviceName)
+                        .tag("protocol", protocol)
+                        .register(meterRegistry);
+            } else {
+                logger.debug("Gauge {} already exists for service: {}, protocol: {}", activeMetricName, serviceName,
+                        protocol);
+            }
 
-        // Idle connections gauge
-        Gauge.builder("http_pool_connections_idle", metrics, m -> m.getIdleConnections())
-                .description("Currently idle HTTP connections in the pool")
-                .tag("service", serviceName)
-                .tag("protocol", protocol)
-                .register(meterRegistry);
+            String idleMetricName = "http_pool_connections_idle";
+            if (meterRegistry.find(idleMetricName).tag("service", serviceName).tag("protocol", protocol)
+                    .gauge() == null) {
+                Gauge.builder(idleMetricName, metrics, m -> m.getIdleConnections())
+                        .description("Currently idle HTTP connections in the pool")
+                        .tag("service", serviceName)
+                        .tag("protocol", protocol)
+                        .register(meterRegistry);
+            } else {
+                logger.debug("Gauge {} already exists for service: {}, protocol: {}", idleMetricName, serviceName,
+                        protocol);
+            }
 
-        logger.debug("Registered HTTP connection pool gauges for service: {} with protocol: {}",
-                serviceName, protocol);
+            logger.debug("Registered HTTP connection pool gauges for service: {} with protocol: {}",
+                    serviceName, protocol);
+
+        } catch (Exception e) {
+            logger.error("Failed to register HTTP connection pool gauges for service: {} with protocol: {}: {}",
+                    serviceName, protocol, e.getMessage());
+            throw e; // Re-throw to be handled by caller
+        }
     }
 
     /**
@@ -131,6 +169,8 @@ public class HttpMetricsService {
      * This method can be called to update the metrics values.
      */
     public void updateConnectionPoolMetrics(String serviceName, int total, int active, int idle) {
+        logger.info("Updating HTTP connection pool metrics for service: {} - Total: {}, Active: {}, Idle: {}",
+                serviceName, total, active, idle);
         HttpConnectionPoolMetrics metrics = serviceMetrics.get(serviceName);
         if (metrics != null) {
             metrics.setTotalConnections(total);
@@ -148,8 +188,12 @@ public class HttpMetricsService {
      * and updates the metrics for all registered services.
      */
     public void updateConnectionPoolMetricsFromManager() {
+        logger.error("=== updateConnectionPoolMetricsFromManager() called ===");
+        logger.info("Updating HTTP connection pool metrics from manager");
+        logger.info("Registered services count: {}", serviceMetrics.size());
+
         if (connectionManager == null) {
-            logger.debug("Connection manager not available, using default values for HTTP metrics");
+            logger.error("Connection manager not available, using default values for HTTP metrics");
             updateWithDefaultValues();
             return;
         }
@@ -193,6 +237,9 @@ public class HttpMetricsService {
      * This provides a fallback mechanism to ensure metrics are still populated.
      */
     private void updateWithDefaultValues() {
+        logger.error("=== updateWithDefaultValues() called ===");
+        logger.info("Updating {} services with default values", serviceMetrics.size());
+
         try {
             for (String serviceName : serviceMetrics.keySet()) {
                 HttpConnectionPoolMetrics metrics = serviceMetrics.get(serviceName);
@@ -202,7 +249,7 @@ public class HttpMetricsService {
                     metrics.setActiveConnections(0); // No active connections when manager unavailable
                     metrics.setIdleConnections(0); // No idle connections when manager unavailable
 
-                    logger.debug(
+                    logger.error(
                             "Updated HTTP connection pool metrics for service: {} with default values - Total: {}, Active: {}, Idle: {}",
                             serviceName, 20, 0, 0);
                 }
@@ -252,6 +299,13 @@ public class HttpMetricsService {
     }
 
     /**
+     * Checks if metrics are already registered for a specific service.
+     */
+    public boolean isServiceRegistered(String serviceName) {
+        return serviceName != null && serviceMetrics.containsKey(serviceName.trim());
+    }
+
+    /**
      * Gets the current metrics for a service.
      */
     public HttpConnectionPoolMetrics getServiceMetrics(String serviceName) {
@@ -265,15 +319,16 @@ public class HttpMetricsService {
      * connection usage.
      */
     public void updateServiceSpecificMetrics(String serviceName, String serviceUrl) {
+        logger.info("Updating service-specific metrics for service: {}", serviceName);
         if (connectionManager == null || serviceName == null || serviceUrl == null) {
-            logger.debug("Cannot update service-specific metrics: missing connection manager or service info");
+            logger.error("Cannot update service-specific metrics: missing connection manager or service info");
             return;
         }
 
         try {
             HttpConnectionPoolMetrics metrics = serviceMetrics.get(serviceName);
             if (metrics == null) {
-                logger.debug("No metrics found for service: {}", serviceName);
+                logger.warn("No metrics found for service: {}", serviceName);
                 return;
             }
 
@@ -291,12 +346,12 @@ public class HttpMetricsService {
             metrics.setActiveConnections(routeStats.getLeased());
             metrics.setIdleConnections(Math.max(0, routeStats.getAvailable() - routeStats.getPending()));
 
-            logger.debug("Updated service-specific HTTP metrics for {}: Total: {}, Active: {}, Idle: {}",
+            logger.info("Updated service-specific HTTP metrics for {}: Total: {}, Active: {}, Idle: {}",
                     serviceName, maxPerRoute, routeStats.getLeased(),
                     Math.max(0, routeStats.getAvailable() - routeStats.getPending()));
 
         } catch (Exception e) {
-            logger.debug("Failed to update service-specific metrics for {}: {}", serviceName, e.getMessage());
+            logger.error("Failed to update service-specific metrics for {}: {}", serviceName, e.getMessage());
             // Fall back to total pool statistics
             updateConnectionPoolMetricsFromManager();
         }
@@ -337,9 +392,16 @@ public class HttpMetricsService {
         updateConnectionPoolMetricsFromManager();
     }
 
-    @PostConstruct
-    public void initialize() {
+    /**
+     * Initializes the HTTP metrics service and starts the periodic update task.
+     * This method is called explicitly from MetricsConfiguration to ensure proper
+     * initialization.
+     */
+    public void initializeHttpMetrics() {
+        logger.error("=== HttpMetricsService initializeHttpMetrics() method called ===");
         logger.info("HttpMetricsService initialized and ready to register HTTP connection pool metrics");
+        logger.info("Connection manager available: {}", connectionManager != null);
+        logger.info("MeterRegistry available: {}", meterRegistry != null);
 
         // Start periodic metrics update task
         scheduler.scheduleAtFixedRate(this::updateConnectionPoolMetricsFromManager,
@@ -347,7 +409,7 @@ public class HttpMetricsService {
                 30, // Update every 30 seconds
                 TimeUnit.SECONDS);
 
-        logger.info("HTTP metrics periodic update task started (30 second interval)");
+        logger.error("=== HTTP metrics periodic update task started (30 second interval) ===");
     }
 
     @PreDestroy

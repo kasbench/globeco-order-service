@@ -31,7 +31,7 @@ public class OrderController {
     private static final Logger logger = LoggerFactory.getLogger(OrderController.class);
     private static final int MAX_BATCH_SIZE = 1000;
     private static final int MAX_SUBMIT_BATCH_SIZE = 100;
-    private static final int DEFAULT_LIMIT = 50;
+    // private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 1000;
     
     private final OrderService orderService;

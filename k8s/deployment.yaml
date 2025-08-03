@@ -20,6 +20,29 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8081
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://globeco-order-service-postgresql:5432/postgres"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "postgres"
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: "postgres"
+            - name: METRICS_CUSTOM_ENABLED
+              value: "true"
+            - name: METRICS_CUSTOM_HTTP_ENABLED
+              value: "true"
+            - name: METRICS_CUSTOM_DATABASE_ENABLED
+              value: "true"
+            - name: SECURITY_SERVICE_URL
+              value: "http://globeco-security-service:8000"
+            - name: PORTFOLIO_SERVICE_URL
+              value: "http://globeco-portfolio-service:8000"
+            - name: EXTERNAL_SERVICES_SECURITY_URL
+              value: "http://globeco-security-service:8000"
+            - name: EXTERNAL_SERVICES_PORTFOLIO_URL
+              value: "http://globeco-portfolio-service:8000"
+            - name: LOG_LEVEL
+              value: "INFO"
           resources:
             requests:
               cpu: "100m"

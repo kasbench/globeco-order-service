@@ -50,21 +50,21 @@
   - Ensure backward compatibility with existing configuration
   - _Requirements: 3.3, 5.1_
 
-- [ ] 8. Create comprehensive unit tests for metrics services
+- [x] 8. Create comprehensive unit tests for metrics services
   - Write unit tests for DatabaseMetricsService metric registration and collection
   - Create unit tests for HttpMetricsService with mocked connection managers
   - Test error handling scenarios for both metrics services
   - Verify metric naming conventions and labeling in tests
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 9. Create integration tests for end-to-end metrics flow
+- [x] 9. Create integration tests for end-to-end metrics flow
   - Write integration tests that verify metrics are collected during actual database operations
   - Create integration tests for HTTP metrics during service client calls
   - Test metrics export via existing OTLP configuration
   - Verify resource attributes are properly included in exported metrics
   - _Requirements: 3.1, 3.2, 3.4, 5.2, 5.3_
 
-- [ ] 10. Add proper resource cleanup and lifecycle management
+- [-] 10. Add proper resource cleanup and lifecycle management
   - Implement proper shutdown hooks for metrics cleanup
   - Add resource management for metric collection threads if needed
   - Ensure metrics services properly handle application shutdown

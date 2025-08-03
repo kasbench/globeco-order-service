@@ -3,6 +3,8 @@ package org.kasbench.globeco_order_service;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -12,6 +14,8 @@ import org.springframework.web.client.RestTemplate;
 
 @SpringBootApplication
 public class GlobecoOrderServiceApplication {
+	
+	private static final Logger logger = LoggerFactory.getLogger(GlobecoOrderServiceApplication.class);
 
 	public static void main(String[] args) {
 		SpringApplication.run(GlobecoOrderServiceApplication.class, args);
@@ -19,9 +23,11 @@ public class GlobecoOrderServiceApplication {
 
 	@Bean
 	public PoolingHttpClientConnectionManager connectionManager() {
+		logger.error("=== Creating PoolingHttpClientConnectionManager bean ===");
 		PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
 		connectionManager.setMaxTotal(200); // Maximum total connections
 		connectionManager.setDefaultMaxPerRoute(20); // Maximum connections per route
+		logger.error("=== PoolingHttpClientConnectionManager bean created successfully ===");
 		return connectionManager;
 	}
 

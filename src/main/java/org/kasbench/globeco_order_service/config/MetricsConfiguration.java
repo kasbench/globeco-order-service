@@ -3,6 +3,7 @@ package org.kasbench.globeco_order_service.config;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.kasbench.globeco_order_service.service.DatabaseMetricsService;
+// import org.hibernate.engine.jdbc.env.internal.LobCreationLogging_.logger;
 import org.kasbench.globeco_order_service.service.DatabaseConnectionInterceptor;
 import org.kasbench.globeco_order_service.service.HttpMetricsService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,17 +49,24 @@ public class MetricsConfiguration {
 
     @Autowired
     public MetricsConfiguration(MeterRegistry meterRegistry,
-                               DatabaseMetricsService databaseMetricsService,
-                               DatabaseConnectionInterceptor databaseConnectionInterceptor,
-                               HttpMetricsService httpMetricsService,
+                               @Autowired(required = false) DatabaseMetricsService databaseMetricsService,
+                               @Autowired(required = false) DatabaseConnectionInterceptor databaseConnectionInterceptor,
+                               @Autowired(required = false) HttpMetricsService httpMetricsService,
                                DataSource dataSource,
                                MetricsProperties metricsProperties) {
+        log.error("=== MetricsConfiguration constructor called ===");
+        log.info("HttpMetricsService available: {}", httpMetricsService != null);
+        log.info("DatabaseMetricsService available: {}", databaseMetricsService != null);
+        log.info("MeterRegistry available: {}", meterRegistry != null);
+        
         this.meterRegistry = meterRegistry;
         this.databaseMetricsService = databaseMetricsService;
         this.databaseConnectionInterceptor = databaseConnectionInterceptor;
         this.httpMetricsService = httpMetricsService;
         this.dataSource = dataSource;
         this.metricsProperties = metricsProperties;
+        
+        log.error("=== MetricsConfiguration constructor completed ===");
     }
 
     /**
@@ -68,6 +76,7 @@ public class MetricsConfiguration {
      */
     @PostConstruct
     public void initializeMetricsConfiguration() {
+        log.error("=== MetricsConfiguration @PostConstruct initializeMetricsConfiguration() called ===");
         log.info("Starting custom metrics configuration initialization");
         
         try {
@@ -184,11 +193,11 @@ public class MetricsConfiguration {
     }
 
     /**
-     * Initializes database metrics if enabled.
+     * Initializes database metrics.
      */
     private void initializeDatabaseMetrics() {
-        if (!metricsProperties.getDatabase().isEnabled()) {
-            log.info("Database metrics are disabled, skipping initialization");
+        if (databaseMetricsService == null || databaseConnectionInterceptor == null) {
+            log.warn("Database metrics services are not available, skipping database metrics initialization");
             return;
         }
 
@@ -224,11 +233,11 @@ public class MetricsConfiguration {
     }
 
     /**
-     * Initializes HTTP metrics if enabled.
+     * Initializes HTTP metrics.
      */
     private void initializeHttpMetrics() {
-        if (!metricsProperties.getHttp().isEnabled()) {
-            log.info("HTTP metrics are disabled, skipping initialization");
+        if (httpMetricsService == null) {
+            log.warn("HttpMetricsService is not available, skipping HTTP metrics initialization");
             return;
         }
 
@@ -236,8 +245,12 @@ public class MetricsConfiguration {
             if (metricsProperties.getInitialization().isVerboseLogging()) {
                 log.info("Initializing HTTP metrics with configuration: {}", metricsProperties.getHttp());
             } else {
-                log.debug("Initializing HTTP metrics...");
+                log.info("Initializing HTTP metrics...");
             }
+            
+            // Explicitly initialize the HttpMetricsService to ensure @PostConstruct equivalent runs
+            log.info("Calling initializeHttpMetrics!");
+            httpMetricsService.initializeHttpMetrics();
             
             // Register HTTP metrics for external services
             registerHttpMetricsForServices();
@@ -254,6 +267,11 @@ public class MetricsConfiguration {
      * Registers HTTP connection pool metrics for external services.
      */
     private void registerHttpMetricsForServices() {
+        if (httpMetricsService == null) {
+            log.warn("HttpMetricsService is not available, cannot register HTTP metrics for services");
+            return;
+        }
+        
         int maxServices = metricsProperties.getHttp().getMaxMonitoredServices();
         int registeredCount = 0;
         
@@ -343,14 +361,10 @@ public class MetricsConfiguration {
      */
     private void validateSpecificMetrics() {
         // Check database metrics
-        if (metricsProperties.getDatabase().isEnabled()) {
-            validateDatabaseMetrics();
-        }
+        validateDatabaseMetrics();
         
         // Check HTTP metrics
-        if (metricsProperties.getHttp().isEnabled()) {
-            validateHttpMetrics();
-        }
+        validateHttpMetrics();
     }
 
     /**
@@ -400,8 +414,8 @@ public class MetricsConfiguration {
     private void logMetricsConfiguration() {
         log.info("Custom Metrics Configuration:");
         log.info("  - Master enabled: {}", metricsProperties.isEnabled());
-        log.info("  - Database metrics enabled: {}", metricsProperties.getDatabase().isEnabled());
-        log.info("  - HTTP metrics enabled: {}", metricsProperties.getHttp().isEnabled());
+        log.info("  - Database metrics: ALWAYS ENABLED");
+        log.info("  - HTTP metrics: ALWAYS ENABLED");
         log.info("  - Database collection interval: {}", metricsProperties.getEffectiveDatabaseCollectionInterval());
         log.info("  - HTTP collection interval: {}", metricsProperties.getEffectiveHttpCollectionInterval());
         log.info("  - Async collection enabled: {}", metricsProperties.getCollection().isAsyncEnabled());
@@ -432,7 +446,7 @@ public class MetricsConfiguration {
         StringBuilder status = new StringBuilder();
         status.append("Custom Metrics Status:\n");
         
-        if (metricsProperties.getDatabase().isEnabled()) {
+        if (databaseMetricsService != null && databaseConnectionInterceptor != null) {
             boolean dbInitialized = databaseMetricsService.isInitialized();
             boolean interceptorInitialized = databaseConnectionInterceptor.isInitialized();
             status.append("  - Database metrics: ").append(dbInitialized ? "INITIALIZED" : "NOT INITIALIZED").append("\n");
@@ -443,16 +457,16 @@ public class MetricsConfiguration {
                 status.append("  - Pool statistics: ").append(databaseMetricsService.getPoolStatistics()).append("\n");
             }
         } else {
-            status.append("  - Database metrics: DISABLED\n");
+            status.append("  - Database metrics: Services not available\n");
         }
         
-        if (metricsProperties.getHttp().isEnabled()) {
+        if (httpMetricsService != null) {
             int registeredServices = httpMetricsService.getRegisteredServices().size();
             int maxServices = metricsProperties.getHttp().getMaxMonitoredServices();
             status.append("  - HTTP metrics: ").append(registeredServices).append("/").append(maxServices).append(" services registered\n");
             status.append("  - Collection interval: ").append(metricsProperties.getEffectiveHttpCollectionInterval()).append("\n");
         } else {
-            status.append("  - HTTP metrics: DISABLED\n");
+            status.append("  - HTTP metrics: Service not available\n");
         }
         
         int totalMeters = meterRegistry.getMeters().size();
@@ -462,22 +476,19 @@ public class MetricsConfiguration {
     }
 
     /**
-     * Checks if all enabled metrics are properly initialized.
+     * Checks if all metrics are properly initialized.
      * 
-     * @return true if all enabled metrics are initialized, false otherwise
+     * @return true if all metrics are initialized, false otherwise
      */
     public boolean areAllMetricsInitialized() {
         boolean allInitialized = true;
         
-        if (metricsProperties.getDatabase().isEnabled()) {
-            allInitialized &= databaseMetricsService.isInitialized() && 
-                             databaseConnectionInterceptor.isInitialized();
-        }
+        allInitialized &= databaseMetricsService != null && databaseConnectionInterceptor != null &&
+                         databaseMetricsService.isInitialized() && 
+                         databaseConnectionInterceptor.isInitialized();
         
-        if (metricsProperties.getHttp().isEnabled()) {
-            // HTTP metrics are considered initialized if at least one service is registered
-            allInitialized &= !httpMetricsService.getRegisteredServices().isEmpty();
-        }
+        // HTTP metrics are considered initialized if at least one service is registered
+        allInitialized &= httpMetricsService != null && !httpMetricsService.getRegisteredServices().isEmpty();
         
         return allInitialized;
     }
