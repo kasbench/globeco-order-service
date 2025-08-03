@@ -12,7 +12,6 @@ import org.junit.jupiter.api.DisplayName;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for HttpRequestMetricsService.
@@ -310,5 +309,302 @@ class HttpRequestMetricsServiceTest {
         // Verify the timer has the expected duration
         double totalTimeSeconds = timer.totalTime(TimeUnit.SECONDS);
         assertThat(totalTimeSeconds).isCloseTo(0.025, org.assertj.core.data.Offset.offset(0.001));
+    }
+
+    @Test
+    @DisplayName("Should handle invalid input parameters gracefully")
+    void shouldHandleInvalidInputParametersGracefully() {
+        // When - test with null method
+        metricsService.recordRequest(null, "/api/v1/orders", 200, 1000000L);
+        
+        // Then - should use fallback method
+        Counter counter = meterRegistry.find("http_requests_total")
+                .tag("method", "UNKNOWN")
+                .tag("path", "/api/v1/orders")
+                .tag("status", "200")
+                .counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(1);
+
+        // When - test with null path
+        metricsService.recordRequest("GET", null, 200, 1000000L);
+        
+        // Then - should use fallback path
+        counter = meterRegistry.find("http_requests_total")
+                .tag("method", "GET")
+                .tag("path", "/unknown")
+                .tag("status", "200")
+                .counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(1);
+
+        // When - test with invalid status code
+        metricsService.recordRequest("GET", "/api/v1/orders", -1, 1000000L);
+        
+        // Then - should use fallback status
+        counter = meterRegistry.find("http_requests_total")
+                .tag("method", "GET")
+                .tag("path", "/api/v1/orders")
+                .tag("status", "unknown")
+                .counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(1);
+
+        // When - test with negative duration
+        metricsService.recordRequest("GET", "/api/v1/orders", 200, -1000L);
+        
+        // Then - should record with corrected duration (0)
+        Timer timer = meterRegistry.find("http_request_duration_seconds")
+                .tag("method", "GET")
+                .tag("path", "/api/v1/orders")
+                .tag("status", "200")
+                .timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+        assertThat(timer.totalTime(TimeUnit.NANOSECONDS)).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("Should handle extremely large duration values")
+    void shouldHandleExtremelyLargeDurationValues() {
+        // Given - duration longer than 1 hour (should be capped)
+        long oneHourNanos = TimeUnit.HOURS.toNanos(1);
+        long twoHoursNanos = TimeUnit.HOURS.toNanos(2);
+
+        // When
+        metricsService.recordRequest("GET", "/api/v1/orders", 200, twoHoursNanos);
+
+        // Then - should be capped to 1 hour
+        Timer timer = meterRegistry.find("http_request_duration_seconds")
+                .tag("method", "GET")
+                .tag("path", "/api/v1/orders")
+                .tag("status", "200")
+                .timer();
+        
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+        assertThat(timer.totalTime(TimeUnit.NANOSECONDS)).isEqualTo(oneHourNanos);
+    }
+
+    @Test
+    @DisplayName("Should verify metric naming conventions")
+    void shouldVerifyMetricNamingConventions() {
+        // When
+        metricsService.recordRequest("GET", "/api/v1/orders", 200, 1000000L);
+
+        // Then - verify counter metric name and description
+        Counter counter = meterRegistry.find("http_requests_total").counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.getId().getName()).isEqualTo("http_requests_total");
+        assertThat(counter.getId().getDescription()).isEqualTo("Total number of HTTP requests");
+
+        // Then - verify timer metric name and description
+        Timer timer = meterRegistry.find("http_request_duration_seconds").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.getId().getName()).isEqualTo("http_request_duration_seconds");
+        assertThat(timer.getId().getDescription()).isEqualTo("Duration of HTTP requests in seconds");
+
+        // Then - verify gauge metric name and description
+        Gauge gauge = meterRegistry.find("http_requests_in_flight").gauge();
+        assertThat(gauge).isNotNull();
+        assertThat(gauge.getId().getName()).isEqualTo("http_requests_in_flight");
+        assertThat(gauge.getId().getDescription()).isEqualTo("Number of HTTP requests currently being processed");
+    }
+
+    @Test
+    @DisplayName("Should verify metric labeling requirements")
+    void shouldVerifyMetricLabelingRequirements() {
+        // When
+        metricsService.recordRequest("POST", "/api/v1/orders/{id}", 201, 2000000L);
+
+        // Then - verify counter has all required labels
+        Counter counter = meterRegistry.find("http_requests_total")
+                .tag("method", "POST")
+                .tag("path", "/api/v1/orders/{id}")
+                .tag("status", "201")
+                .counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.getId().getTags()).hasSize(3);
+
+        // Then - verify timer has all required labels
+        Timer timer = meterRegistry.find("http_request_duration_seconds")
+                .tag("method", "POST")
+                .tag("path", "/api/v1/orders/{id}")
+                .tag("status", "201")
+                .timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.getId().getTags()).hasSize(3);
+
+        // Then - verify gauge has no labels (as per requirements)
+        Gauge gauge = meterRegistry.find("http_requests_in_flight").gauge();
+        assertThat(gauge).isNotNull();
+        assertThat(gauge.getId().getTags()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should handle in-flight requests counter edge cases")
+    void shouldHandleInFlightRequestsCounterEdgeCases() {
+        // Test multiple increments
+        metricsService.incrementInFlightRequests();
+        metricsService.incrementInFlightRequests();
+        metricsService.incrementInFlightRequests();
+        
+        assertThat(metricsService.getInFlightRequests()).isEqualTo(3);
+
+        // Test decrement below zero (should reset to 0)
+        metricsService.decrementInFlightRequests();
+        metricsService.decrementInFlightRequests();
+        metricsService.decrementInFlightRequests();
+        metricsService.decrementInFlightRequests(); // This should trigger reset to 0
+        
+        assertThat(metricsService.getInFlightRequests()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("Should handle route pattern sanitization edge cases")
+    void shouldHandleRoutePatternSanitizationEdgeCases() {
+        // Test various edge cases for route pattern sanitization
+        
+        // Query parameters should be removed
+        metricsService.recordRequest("GET", "/api/orders?page=1&size=10", 200, 1000000L);
+        Counter counter = meterRegistry.find("http_requests_total")
+                .tag("path", "/api/orders")
+                .counter();
+        assertThat(counter).isNotNull();
+
+        // Fragments should be removed
+        metricsService.recordRequest("GET", "/api/orders#section", 200, 1000000L);
+        counter = meterRegistry.find("http_requests_total")
+                .tag("path", "/api/orders")
+                .counter();
+        assertThat(counter.count()).isEqualTo(2); // Should increment existing counter
+
+        // Multiple slashes should be normalized
+        metricsService.recordRequest("GET", "/api//v1///orders", 200, 1000000L);
+        counter = meterRegistry.find("http_requests_total")
+                .tag("path", "/api/v1/orders")
+                .counter();
+        assertThat(counter).isNotNull();
+
+        // Path without leading slash should be corrected
+        metricsService.recordRequest("GET", "api/v1/orders", 200, 1000000L);
+        counter = meterRegistry.find("http_requests_total")
+                .tag("path", "/api/v1/orders")
+                .counter();
+        assertThat(counter.count()).isEqualTo(2); // Should increment existing counter
+    }
+
+    @Test
+    @DisplayName("Should handle HTTP method normalization edge cases")
+    void shouldHandleHttpMethodNormalizationEdgeCases() {
+        // Test lowercase methods
+        metricsService.recordRequest("get", "/api/v1/orders", 200, 1000000L);
+        Counter counter = meterRegistry.find("http_requests_total")
+                .tag("method", "GET")
+                .counter();
+        assertThat(counter).isNotNull();
+
+        // Test mixed case methods
+        metricsService.recordRequest("PoSt", "/api/v1/orders", 201, 1000000L);
+        counter = meterRegistry.find("http_requests_total")
+                .tag("method", "POST")
+                .counter();
+        assertThat(counter).isNotNull();
+
+        // Test methods with whitespace
+        metricsService.recordRequest("  PUT  ", "/api/v1/orders", 200, 1000000L);
+        counter = meterRegistry.find("http_requests_total")
+                .tag("method", "PUT")
+                .counter();
+        assertThat(counter).isNotNull();
+
+        // Test empty method (should use fallback)
+        metricsService.recordRequest("", "/api/v1/orders", 200, 1000000L);
+        counter = meterRegistry.find("http_requests_total")
+                .tag("method", "UNKNOWN")
+                .counter();
+        assertThat(counter).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should handle status code normalization edge cases")
+    void shouldHandleStatusCodeNormalizationEdgeCases() {
+        // Test boundary status codes
+        metricsService.recordRequest("GET", "/api/v1/orders", 100, 1000000L);
+        Counter counter = meterRegistry.find("http_requests_total")
+                .tag("status", "100")
+                .counter();
+        assertThat(counter).isNotNull();
+
+        metricsService.recordRequest("GET", "/api/v1/orders", 599, 1000000L);
+        counter = meterRegistry.find("http_requests_total")
+                .tag("status", "599")
+                .counter();
+        assertThat(counter).isNotNull();
+
+        // Test non-standard but reasonable status codes
+        metricsService.recordRequest("GET", "/api/v1/orders", 299, 1000000L);
+        counter = meterRegistry.find("http_requests_total")
+                .tag("status", "299")
+                .counter();
+        assertThat(counter).isNotNull();
+
+        // Test invalid status codes (should use fallback)
+        metricsService.recordRequest("GET", "/api/v1/orders", 1000, 1000000L);
+        counter = meterRegistry.find("http_requests_total")
+                .tag("status", "unknown")
+                .counter();
+        assertThat(counter).isNotNull(); // Should use fallback status
+    }
+
+    @Test
+    @DisplayName("Should handle metric caching correctly")
+    void shouldHandleMetricCachingCorrectly() {
+        // Record same request multiple times to test caching
+        String method = "GET";
+        String path = "/api/v1/orders";
+        int status = 200;
+        
+        // First request should create metrics
+        metricsService.recordRequest(method, path, status, 1000000L);
+        
+        // Subsequent requests should use cached metrics
+        metricsService.recordRequest(method, path, status, 2000000L);
+        metricsService.recordRequest(method, path, status, 3000000L);
+
+        // Verify counter incremented correctly
+        Counter counter = meterRegistry.find("http_requests_total")
+                .tag("method", method)
+                .tag("path", path)
+                .tag("status", String.valueOf(status))
+                .counter();
+        assertThat(counter.count()).isEqualTo(3);
+
+        // Verify timer recorded all durations
+        Timer timer = meterRegistry.find("http_request_duration_seconds")
+                .tag("method", method)
+                .tag("path", path)
+                .tag("status", String.valueOf(status))
+                .timer();
+        assertThat(timer.count()).isEqualTo(3);
+        assertThat(timer.totalTime(TimeUnit.NANOSECONDS)).isEqualTo(6000000L);
+
+        // Verify cache statistics show cached entries
+        String stats = metricsService.getCacheStatistics();
+        assertThat(stats).contains("Counters: 1");
+        assertThat(stats).contains("Timers: 1");
+    }
+
+    @Test
+    @DisplayName("Should handle service initialization validation")
+    void shouldHandleServiceInitializationValidation() {
+        // Service should be properly initialized
+        assertThat(metricsService.isInitialized()).isTrue();
+        
+        // Service status should show proper initialization
+        String status = metricsService.getServiceStatus();
+        assertThat(status).contains("Initialized: true");
+        assertThat(status).contains("MeterRegistry: SimpleMeterRegistry");
+        assertThat(status).contains("In-flight requests: 0");
     }
 }

@@ -37,7 +37,7 @@
   - Add proper logging for debugging metric collection issues
   - _Requirements: 4.2, 4.3_
 
-- [ ] 6. Create unit tests for HTTP request metrics service
+- [x] 6. Create unit tests for HTTP request metrics service.  Focus on high value tests.  If any test is more effort than it's worth, skip it.
   - Write unit tests for HttpRequestMetricsService metric registration and recording
   - Test route pattern sanitization with various URL patterns
   - Create tests for concurrent metric recording scenarios
