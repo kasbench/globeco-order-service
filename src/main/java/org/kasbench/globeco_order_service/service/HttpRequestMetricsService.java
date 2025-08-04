@@ -22,46 +22,44 @@ import java.util.concurrent.atomic.AtomicInteger;
  * - Request duration histogram (http_request_duration_seconds)
  * - In-flight requests gauge (http_requests_in_flight)
  * 
- * This service handles metric registration, recording, and route pattern sanitization
+ * This service handles metric registration, recording, and route pattern
+ * sanitization
  * to prevent high cardinality issues while maintaining observability.
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(
-    value = {
+@ConditionalOnProperty(value = {
         "metrics.custom.enabled",
-        "metrics.custom.http.enabled", 
+        "metrics.custom.http.enabled",
         "metrics.custom.http.request.enabled"
-    },
-    havingValue = "true"
-)
+}, havingValue = "true")
 public class HttpRequestMetricsService {
 
     private final MeterRegistry meterRegistry;
     private final MetricsProperties metricsProperties;
     private final AtomicInteger inFlightRequests;
-    
+
     // Cache for metric instances to avoid repeated lookups
     private final ConcurrentHashMap<String, Counter> counterCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Timer> timerCache = new ConcurrentHashMap<>();
 
     @Autowired
     public HttpRequestMetricsService(MeterRegistry meterRegistry, MetricsProperties metricsProperties) {
-        log.info("HttpRequestMetricsService constructor called with MeterRegistry: {}, MetricsProperties: {}", 
+        log.info("HttpRequestMetricsService constructor called with MeterRegistry: {}, MetricsProperties: {}",
                 meterRegistry != null ? meterRegistry.getClass().getSimpleName() : "null",
                 metricsProperties != null ? "configured" : "null");
-        
+
         this.meterRegistry = meterRegistry;
         this.metricsProperties = metricsProperties;
         this.inFlightRequests = new AtomicInteger(0);
-        
+
         // Validate configuration
         validateConfiguration();
-        
+
         // Register the in-flight requests gauge
         registerInFlightGauge();
-        
-        log.info("HttpRequestMetricsService initialized successfully with HTTP request metrics enabled: {}", 
+
+        log.info("HttpRequestMetricsService initialized successfully with HTTP request metrics enabled: {}",
                 metricsProperties.getHttp().getRequest().isEnabled());
     }
 
@@ -72,29 +70,29 @@ public class HttpRequestMetricsService {
         if (metricsProperties == null) {
             throw new IllegalStateException("MetricsProperties is required but not available");
         }
-        
+
         if (!metricsProperties.isEnabled()) {
             log.warn("Custom metrics are disabled globally, HTTP request metrics may not function properly");
         }
-        
+
         if (!metricsProperties.getHttp().isEnabled()) {
             log.warn("HTTP metrics are disabled, HTTP request metrics may not function properly");
         }
-        
+
         if (!metricsProperties.getHttp().getRequest().isEnabled()) {
             log.warn("HTTP request metrics are disabled in configuration");
         }
-        
+
         // Validate cache configuration
         MetricsProperties.HttpRequestMetrics requestConfig = metricsProperties.getHttp().getRequest();
         if (requestConfig.isMetricCachingEnabled() && requestConfig.getMaxCacheSize() <= 0) {
             log.warn("Invalid cache size configuration: {}, using default", requestConfig.getMaxCacheSize());
         }
-        
+
         if (requestConfig.getMaxPathSegments() <= 0) {
             log.warn("Invalid max path segments configuration: {}, using default", requestConfig.getMaxPathSegments());
         }
-        
+
         log.debug("HTTP request metrics configuration validation completed");
     }
 
@@ -107,7 +105,7 @@ public class HttpRequestMetricsService {
             Gauge.builder("http_requests_in_flight", inFlightRequests, AtomicInteger::get)
                     .description("Number of HTTP requests currently being processed")
                     .register(meterRegistry);
-            
+
             log.debug("Registered http_requests_in_flight gauge metric");
         } catch (Exception e) {
             log.error("Failed to register in-flight requests gauge: {}", e.getMessage(), e);
@@ -118,9 +116,9 @@ public class HttpRequestMetricsService {
      * Records an HTTP request with all associated metrics.
      * This method is thread-safe and handles errors gracefully.
      * 
-     * @param method HTTP method (GET, POST, etc.)
-     * @param path Request path or route pattern
-     * @param statusCode HTTP status code
+     * @param method        HTTP method (GET, POST, etc.)
+     * @param path          Request path or route pattern
+     * @param statusCode    HTTP status code
      * @param durationNanos Request duration in nanoseconds
      */
     public void recordRequest(String method, String path, int statusCode, long durationNanos) {
@@ -128,36 +126,37 @@ public class HttpRequestMetricsService {
         if (!isValidInput(method, path, statusCode, durationNanos)) {
             log.debug("Invalid input parameters for metric recording, using fallbacks");
         }
-        
+
         try {
             // Sanitize inputs using utility classes with additional validation
             String sanitizedMethod = sanitizeMethodWithFallback(method);
             String sanitizedPath = sanitizePathWithFallback(path);
             String statusString = sanitizeStatusWithFallback(statusCode);
             long validDuration = validateDuration(durationNanos);
-            
+
             // Record metrics with individual error handling
             boolean counterSuccess = recordRequestCounter(sanitizedMethod, sanitizedPath, statusString);
-            boolean durationSuccess = recordRequestDuration(sanitizedMethod, sanitizedPath, statusString, validDuration);
-            
+            boolean durationSuccess = recordRequestDuration(sanitizedMethod, sanitizedPath, statusString,
+                    validDuration);
+
             // Log success/failure details
             if (counterSuccess && durationSuccess) {
-                log.debug("Successfully recorded HTTP request metrics: {} {} {} {}ns", 
-                         sanitizedMethod, sanitizedPath, statusString, validDuration);
+                log.debug("Successfully recorded HTTP request metrics: {} {} {} {}ns",
+                        sanitizedMethod, sanitizedPath, statusString, validDuration);
             } else {
-                log.warn("Partial failure recording HTTP request metrics: {} {} {} (counter: {}, duration: {})", 
+                log.warn("Partial failure recording HTTP request metrics: {} {} {} (counter: {}, duration: {})",
                         sanitizedMethod, sanitizedPath, statusString, counterSuccess, durationSuccess);
             }
-            
+
         } catch (Exception e) {
-            log.warn("Failed to record HTTP request metrics for {} {} {}: {}", 
+            log.warn("Failed to record HTTP request metrics for {} {} {}: {}",
                     method, path, statusCode, e.getMessage());
-            
+
             // Log additional context for debugging
             if (log.isDebugEnabled()) {
                 log.debug("Metric recording error details", e);
             }
-            
+
             // Attempt emergency fallback recording
             attemptEmergencyRecording(method, path, statusCode, durationNanos);
         }
@@ -172,7 +171,7 @@ public class HttpRequestMetricsService {
     private boolean recordRequestCounter(String method, String path, String status) {
         try {
             Counter counter;
-            
+
             if (metricsProperties.getHttp().getRequest().isMetricCachingEnabled()) {
                 // Check cache size limit
                 if (counterCache.size() >= metricsProperties.getHttp().getRequest().getMaxCacheSize()) {
@@ -180,14 +179,14 @@ public class HttpRequestMetricsService {
                     counter = createRequestCounterSafely(method, path, status);
                 } else {
                     String cacheKey = buildCacheKey("counter", method, path, status);
-                    counter = counterCache.computeIfAbsent(cacheKey, 
-                        k -> createRequestCounterSafely(method, path, status));
+                    counter = counterCache.computeIfAbsent(cacheKey,
+                            k -> createRequestCounterSafely(method, path, status));
                 }
             } else {
                 // Caching disabled, create counter directly
                 counter = createRequestCounterSafely(method, path, status);
             }
-            
+
             if (counter != null) {
                 counter.increment();
                 return true;
@@ -195,9 +194,9 @@ public class HttpRequestMetricsService {
                 log.debug("Counter creation failed for {} {} {}", method, path, status);
                 return false;
             }
-            
+
         } catch (Exception e) {
-            log.warn("Failed to record request counter for {} {} {}: {}", 
+            log.warn("Failed to record request counter for {} {} {}: {}",
                     method, path, status, e.getMessage());
             if (log.isDebugEnabled()) {
                 log.debug("Counter recording error details", e);
@@ -215,7 +214,7 @@ public class HttpRequestMetricsService {
     private boolean recordRequestDuration(String method, String path, String status, long durationNanos) {
         try {
             Timer timer;
-            
+
             if (metricsProperties.getHttp().getRequest().isMetricCachingEnabled()) {
                 // Check cache size limit
                 if (timerCache.size() >= metricsProperties.getHttp().getRequest().getMaxCacheSize()) {
@@ -223,24 +222,26 @@ public class HttpRequestMetricsService {
                     timer = createRequestTimerSafely(method, path, status);
                 } else {
                     String cacheKey = buildCacheKey("timer", method, path, status);
-                    timer = timerCache.computeIfAbsent(cacheKey, 
-                        k -> createRequestTimerSafely(method, path, status));
+                    timer = timerCache.computeIfAbsent(cacheKey,
+                            k -> createRequestTimerSafely(method, path, status));
                 }
             } else {
                 // Caching disabled, create timer directly
                 timer = createRequestTimerSafely(method, path, status);
             }
-            
+
             if (timer != null) {
-                timer.record(durationNanos, TimeUnit.NANOSECONDS);
+                // Record duration using Duration.ofNanos which will be properly converted to
+                // the timer's base unit
+                timer.record(Duration.ofNanos(durationNanos));
                 return true;
             } else {
                 log.debug("Timer creation failed for {} {} {}", method, path, status);
                 return false;
             }
-            
+
         } catch (Exception e) {
-            log.warn("Failed to record request duration for {} {} {}: {}", 
+            log.warn("Failed to record request duration for {} {} {}: {}",
                     method, path, status, e.getMessage());
             if (log.isDebugEnabled()) {
                 log.debug("Timer recording error details", e);
@@ -267,28 +268,29 @@ public class HttpRequestMetricsService {
     }
 
     /**
-     * Creates a new HTTP request duration timer metric with standard buckets and error handling.
+     * Creates a new HTTP request duration timer metric with standard buckets and
+     * error handling.
      */
     private Timer createRequestTimerSafely(String method, String path, String status) {
         try {
             return Timer.builder("http_request_duration_seconds")
-                    .description("Duration of HTTP requests in seconds")
+                    .description("Duration of HTTP requests")
                     .tag("method", method)
                     .tag("path", path)
                     .tag("status", status)
                     .publishPercentileHistogram()
                     .serviceLevelObjectives(
-                        Duration.ofMillis(5),    // 0.005s
-                        Duration.ofMillis(10),   // 0.01s
-                        Duration.ofMillis(25),   // 0.025s
-                        Duration.ofMillis(50),   // 0.05s
-                        Duration.ofMillis(100),  // 0.1s
-                        Duration.ofMillis(250),  // 0.25s
-                        Duration.ofMillis(500),  // 0.5s
-                        Duration.ofSeconds(1),   // 1s
-                        Duration.ofMillis(2500), // 2.5s
-                        Duration.ofSeconds(5),   // 5s
-                        Duration.ofSeconds(10)   // 10s
+                            Duration.ofNanos(5_000_000), // 0.005s
+                            Duration.ofNanos(10_000_000), // 0.01s
+                            Duration.ofNanos(25_000_000), // 0.025s
+                            Duration.ofNanos(50_000_000), // 0.05s
+                            Duration.ofNanos(100_000_000), // 0.1s
+                            Duration.ofNanos(250_000_000), // 0.25s
+                            Duration.ofNanos(500_000_000), // 0.5s
+                            Duration.ofSeconds(1), // 1s
+                            Duration.ofNanos(2_500_000_000L), // 2.5s
+                            Duration.ofSeconds(5), // 5s
+                            Duration.ofSeconds(10) // 10s
                     )
                     .register(meterRegistry);
         } catch (Exception e) {
@@ -306,7 +308,7 @@ public class HttpRequestMetricsService {
             if (inFlightRequests != null) {
                 int newValue = inFlightRequests.incrementAndGet();
                 log.trace("Incremented in-flight requests to: {}", newValue);
-                
+
                 // Sanity check for unreasonable values
                 if (newValue > 10000) {
                     log.warn("In-flight requests count is unusually high: {}. This may indicate a leak.", newValue);
@@ -331,7 +333,7 @@ public class HttpRequestMetricsService {
             if (inFlightRequests != null) {
                 int newValue = inFlightRequests.decrementAndGet();
                 log.trace("Decremented in-flight requests to: {}", newValue);
-                
+
                 // Sanity check for negative values
                 if (newValue < 0) {
                     log.warn("In-flight requests count went negative: {}. Resetting to 0.", newValue);
@@ -396,7 +398,8 @@ public class HttpRequestMetricsService {
     }
 
     /**
-     * Validates that the service is properly initialized and ready to record metrics.
+     * Validates that the service is properly initialized and ready to record
+     * metrics.
      */
     public boolean isInitialized() {
         return meterRegistry != null && inFlightRequests != null;
@@ -409,43 +412,45 @@ public class HttpRequestMetricsService {
         StringBuilder status = new StringBuilder();
         status.append("HttpRequestMetricsService Status:\n");
         status.append("  - Initialized: ").append(isInitialized()).append("\n");
-        status.append("  - MeterRegistry: ").append(meterRegistry != null ? meterRegistry.getClass().getSimpleName() : "null").append("\n");
-        status.append("  - In-flight requests: ").append(inFlightRequests != null ? inFlightRequests.get() : "null").append("\n");
+        status.append("  - MeterRegistry: ")
+                .append(meterRegistry != null ? meterRegistry.getClass().getSimpleName() : "null").append("\n");
+        status.append("  - In-flight requests: ").append(inFlightRequests != null ? inFlightRequests.get() : "null")
+                .append("\n");
         status.append("  - Cached counters: ").append(counterCache.size()).append("\n");
         status.append("  - Cached timers: ").append(timerCache.size()).append("\n");
-        
+
         return status.toString();
     }
-    
+
     /**
      * Validates input parameters for metric recording.
      */
     private boolean isValidInput(String method, String path, int statusCode, long durationNanos) {
         boolean valid = true;
-        
+
         if (method == null || method.trim().isEmpty()) {
             log.debug("Invalid method parameter: {}", method);
             valid = false;
         }
-        
+
         if (path == null || path.trim().isEmpty()) {
             log.debug("Invalid path parameter: {}", path);
             valid = false;
         }
-        
+
         if (statusCode < 0 || statusCode > 999) {
             log.debug("Invalid status code parameter: {}", statusCode);
             valid = false;
         }
-        
+
         if (durationNanos < 0) {
             log.debug("Invalid duration parameter: {}", durationNanos);
             valid = false;
         }
-        
+
         return valid;
     }
-    
+
     /**
      * Sanitizes HTTP method with additional fallback handling.
      */
@@ -457,15 +462,15 @@ public class HttpRequestMetricsService {
             return HttpMethodNormalizer.getUnknownMethod();
         }
     }
-    
+
     /**
      * Sanitizes path with additional fallback handling.
      */
     private String sanitizePathWithFallback(String path) {
         try {
             if (metricsProperties.getHttp().getRequest().isRouteSanitizationEnabled()) {
-                return RoutePatternSanitizer.sanitizeWithMaxSegments(path, 
-                    metricsProperties.getHttp().getRequest().getMaxPathSegments());
+                return RoutePatternSanitizer.sanitizeWithMaxSegments(path,
+                        metricsProperties.getHttp().getRequest().getMaxPathSegments());
             } else {
                 // If sanitization is disabled, still do basic cleanup
                 return path != null ? path : RoutePatternSanitizer.getUnknownPath();
@@ -475,7 +480,7 @@ public class HttpRequestMetricsService {
             return RoutePatternSanitizer.getUnknownPath();
         }
     }
-    
+
     /**
      * Sanitizes status code with additional fallback handling.
      */
@@ -487,7 +492,7 @@ public class HttpRequestMetricsService {
             return StatusCodeHandler.getUnknownStatus();
         }
     }
-    
+
     /**
      * Validates and corrects duration values.
      */
@@ -496,19 +501,20 @@ public class HttpRequestMetricsService {
             log.debug("Negative duration {} corrected to 0", durationNanos);
             return 0;
         }
-        
+
         // Check for unreasonably large durations (more than 1 hour)
         long oneHourNanos = TimeUnit.HOURS.toNanos(1);
         if (durationNanos > oneHourNanos) {
             log.debug("Unusually large duration {} (>1 hour), capping to 1 hour", durationNanos);
             return oneHourNanos;
         }
-        
+
         return durationNanos;
     }
-    
+
     /**
-     * Attempts emergency recording with minimal processing when normal recording fails.
+     * Attempts emergency recording with minimal processing when normal recording
+     * fails.
      */
     private void attemptEmergencyRecording(String method, String path, int statusCode, long durationNanos) {
         try {
@@ -516,10 +522,10 @@ public class HttpRequestMetricsService {
             String simpleMethod = method != null ? method.toUpperCase() : "UNKNOWN";
             String simplePath = path != null ? path : "/unknown";
             String simpleStatus = String.valueOf(statusCode > 0 ? statusCode : 500);
-            
+
             // Try to record with basic counter only (skip timer to reduce complexity)
             String cacheKey = "emergency:" + simpleMethod + ":" + simplePath + ":" + simpleStatus;
-            
+
             Counter emergencyCounter = counterCache.computeIfAbsent(cacheKey, k -> {
                 try {
                     return Counter.builder("http_requests_total")
@@ -533,12 +539,12 @@ public class HttpRequestMetricsService {
                     return null;
                 }
             });
-            
+
             if (emergencyCounter != null) {
                 emergencyCounter.increment();
                 log.debug("Emergency metric recording succeeded for {} {} {}", simpleMethod, simplePath, simpleStatus);
             }
-            
+
         } catch (Exception emergencyError) {
             log.debug("Emergency metric recording also failed: {}", emergencyError.getMessage());
             // At this point, we've exhausted all options - just log and continue

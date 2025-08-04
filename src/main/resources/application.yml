@@ -37,6 +37,8 @@ metrics:
         metric-caching-enabled: true
         max-cache-size: 1000
         detailed-logging-enabled: false
+  debug:
+    enabled: true  # Enable debug metrics endpoint for validation
 
 # Logging Configuration
 logging:

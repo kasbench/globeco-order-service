@@ -418,7 +418,7 @@ class HttpRequestMetricsServiceTest {
         Timer timer = meterRegistry.find("http_request_duration_seconds").timer();
         assertThat(timer).isNotNull();
         assertThat(timer.getId().getName()).isEqualTo("http_request_duration_seconds");
-        assertThat(timer.getId().getDescription()).isEqualTo("Duration of HTTP requests in seconds");
+        assertThat(timer.getId().getDescription()).isEqualTo("Duration of HTTP requests");
 
         // Then - verify gauge metric name and description
         Gauge gauge = meterRegistry.find("http_requests_in_flight").gauge();
