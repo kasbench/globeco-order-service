@@ -273,7 +273,7 @@ public class HttpRequestMetricsService {
      */
     private Timer createRequestTimerSafely(String method, String path, String status) {
         try {
-            return Timer.builder("http_request_duration_seconds")
+            return Timer.builder("http_request_duration")
                     .description("Duration of HTTP requests")
                     .tag("method", method)
                     .tag("path", path)
