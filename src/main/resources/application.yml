@@ -44,8 +44,10 @@ metrics:
 logging:
   level:
     root: ${LOG_LEVEL:INFO}  # Can be overridden by LOG_LEVEL environment variable, defaults to INFO
-    org.kasbench.globeco_order_service: ${LOG_LEVEL:INFO}  # Service-specific logging controlled by LOG_LEVEL
-    org.kasbench.globeco_order_service.service.SecurityServiceClient: ${LOG_LEVEL:INFO}
-    org.kasbench.globeco_order_service.service.PortfolioServiceClient: ${LOG_LEVEL:INFO}
-    org.kasbench.globeco_order_service.service.SecurityCacheService: ${LOG_LEVEL:INFO}
-    org.kasbench.globeco_order_service.service.PortfolioCacheService: ${LOG_LEVEL:INFO} 
+    org.kasbench.globeco_order_service: ${LOG_LEVEL:DEBUG}  # Service-specific logging controlled by LOG_LEVEL
+    org.kasbench.globeco_order_service.service: ${LOG_LEVEL:DEBUG}  # All service classes at DEBUG level
+    org.kasbench.globeco_order_service.controller: ${LOG_LEVEL:DEBUG}  # All controller classes at DEBUG level
+    org.kasbench.globeco_order_service.service.SecurityServiceClient: ${LOG_LEVEL:DEBUG}
+    org.kasbench.globeco_order_service.service.PortfolioServiceClient: ${LOG_LEVEL:DEBUG}
+    org.kasbench.globeco_order_service.service.SecurityCacheService: ${LOG_LEVEL:DEBUG}
+    org.kasbench.globeco_order_service.service.PortfolioCacheService: ${LOG_LEVEL:DEBUG} 

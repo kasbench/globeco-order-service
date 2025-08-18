@@ -45,6 +45,14 @@ spec:
               value: "http://globeco-portfolio-service:8000"
             - name: LOG_LEVEL
               value: "DEBUG"
+            - name: LOGGING_LEVEL_ROOT
+              value: "INFO"
+            - name: LOGGING_LEVEL_ORG_KASBENCH_GLOBECO_ORDER_SERVICE
+              value: "DEBUG"
+            - name: LOGGING_LEVEL_ORG_KASBENCH_GLOBECO_ORDER_SERVICE_SERVICE
+              value: "DEBUG"
+            - name: LOGGING_LEVEL_ORG_KASBENCH_GLOBECO_ORDER_SERVICE_CONTROLLER
+              value: "DEBUG"
           resources:
             requests:
               cpu: "100m"
