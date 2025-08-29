@@ -55,10 +55,10 @@ spec:
               value: "DEBUG"
           resources:
             requests:
-              cpu: "100m"
-              memory: "200Mi"
+              cpu: "500m"
+              memory: "100Mi"
             limits:
-              cpu: "1000m"
+              cpu: "500m"
               memory: "1000Mi"
           livenessProbe:
             httpGet:
@@ -67,7 +67,7 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 240
-            failureThreshold: 3
+            failureThreshold: 10
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
