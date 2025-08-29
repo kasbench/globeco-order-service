@@ -10,9 +10,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.client.RestTemplate;
 
 @SpringBootApplication
+@EnableScheduling
 public class GlobecoOrderServiceApplication {
 	
 	private static final Logger logger = LoggerFactory.getLogger(GlobecoOrderServiceApplication.class);
@@ -48,6 +50,7 @@ public class GlobecoOrderServiceApplication {
 		factory.setHttpClient(httpClient);
 		factory.setConnectTimeout(5000);
 		factory.setConnectionRequestTimeout(5000);
+		factory.setReadTimeout(10000); // Add read timeout to prevent hanging connections
 		
 		RestTemplate restTemplate = new RestTemplate(factory);
 		

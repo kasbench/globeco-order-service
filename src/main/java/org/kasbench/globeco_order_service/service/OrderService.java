@@ -18,6 +18,8 @@ import org.kasbench.globeco_order_service.repository.StatusRepository;
 import org.kasbench.globeco_order_service.repository.BlotterRepository;
 import org.kasbench.globeco_order_service.repository.OrderTypeRepository;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpStatus;
@@ -25,6 +27,7 @@ import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.kasbench.globeco_order_service.dto.OrderWithDetailsDTO;
 import org.kasbench.globeco_order_service.dto.OrderPostDTO;
 import org.kasbench.globeco_order_service.dto.OrderDTO;
@@ -53,6 +56,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import java.util.Map;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class OrderService {
@@ -69,6 +74,11 @@ public class OrderService {
     private final PortfolioCacheService portfolioCacheService;
     private final PortfolioServiceClient portfolioServiceClient;
     private final SecurityServiceClient securityServiceClient;
+    private final TransactionTemplate transactionTemplate;
+    private final TransactionTemplate readOnlyTransactionTemplate;
+    
+    // Semaphore to limit concurrent database operations and prevent connection pool exhaustion
+    private final Semaphore databaseOperationSemaphore = new Semaphore(25); // Max 25 concurrent DB ops
 
     public OrderService(
         OrderRepository orderRepository,
@@ -79,7 +89,8 @@ public class OrderService {
         SecurityCacheService securityCacheService,
         PortfolioCacheService portfolioCacheService,
         PortfolioServiceClient portfolioServiceClient,
-        SecurityServiceClient securityServiceClient
+        SecurityServiceClient securityServiceClient,
+        PlatformTransactionManager transactionManager
     ) {
         this.orderRepository = orderRepository;
         this.statusRepository = statusRepository;
@@ -90,14 +101,25 @@ public class OrderService {
         this.portfolioCacheService = portfolioCacheService;
         this.portfolioServiceClient = portfolioServiceClient;
         this.securityServiceClient = securityServiceClient;
+        
+        // Create transaction templates for precise control
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.transactionTemplate.setTimeout(5); // 5 second timeout
+        
+        this.readOnlyTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.readOnlyTransactionTemplate.setReadOnly(true);
+        this.readOnlyTransactionTemplate.setTimeout(3); // 3 second timeout for reads
     }
 
     @Transactional
     public OrderDTO submitOrder(Integer id) {
+        // Load order and validate status in one query
         Order order = orderRepository.findById(id).orElseThrow();
         if (!order.getStatus().getAbbreviation().equals("NEW")) {
             return null;
         }
+        
+        // Prepare trade order data
         TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
                 .orderId(id)
                 .portfolioId(order.getPortfolioId())
@@ -106,59 +128,29 @@ public class OrderService {
                 .quantity(order.getQuantity())
                 .limitPrice(order.getLimitPrice())
                 .build();
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                "http://globeco-trade-service:8082/api/v1/tradeOrders",
-                new HttpEntity<>(tradeOrder),
-                String.class
-        );
-        Integer tradeOrderId = null;
-        if (response.getStatusCode() == HttpStatus.CREATED) {
-            try {
-                ObjectMapper mapper = new ObjectMapper();
-                JsonNode node = mapper.readTree(response.getBody());
-                if (node.has("id") && node.get("id").isInt()) {
-                    tradeOrderId = node.get("id").asInt();
-                }
-                System.out.println("DEBUG: parsed tradeOrderId: " + tradeOrderId);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to parse trade service response", e);
-            }
-        }
-        Status sentStatus = statusRepository.findAll().stream()
-                .filter(s -> "SENT".equals(s.getAbbreviation()))
-                .findFirst()
-                .orElseThrow();
+        
+        // Call external service (this should be quick)
+        Integer tradeOrderId = callTradeService(order);
         if (tradeOrderId == null) {
             return null;
         }
-        // Create a new Order instance with updated tradeOrderId and status
-        Order updatedOrder = Order.builder()
-                .id(order.getId())
-                .blotter(order.getBlotter())
-                .status(sentStatus)
-                .portfolioId(order.getPortfolioId())
-                .orderType(order.getOrderType())
-                .securityId(order.getSecurityId())
-                .quantity(order.getQuantity())
-                .limitPrice(order.getLimitPrice())
-                .tradeOrderId(tradeOrderId)
-                .orderTimestamp(order.getOrderTimestamp())
-                .version(order.getVersion())
-                .build();
-        System.out.println("DEBUG: about to save order: " + updatedOrder);
-        Order savedOrder = orderRepository.save(updatedOrder);
-        return toOrderDTO(savedOrder);
+        
+        // Update order status efficiently
+        updateOrderAfterSubmission(order, tradeOrderId);
+        
+        // Return the updated order
+        Order updatedOrder = orderRepository.findById(id).orElseThrow();
+        return toOrderDTO(updatedOrder);
     }
 
     /**
      * Submit multiple orders in batch to the trade service.
      * Processes orders individually (non-atomic batch) and continues processing
-     * even if some orders fail.
+     * even if some orders fail. Each order is processed in its own transaction.
      * 
      * @param orderIds List of order IDs to submit
      * @return BatchSubmitResponseDTO containing results for each order
      */
-    @Transactional
     public BatchSubmitResponseDTO submitOrdersBatch(List<Integer> orderIds) {
         logger.info("Starting batch order submission for {} orders", orderIds.size());
         
@@ -172,12 +164,12 @@ public class OrderService {
 
         List<OrderSubmitResultDTO> results = new ArrayList<>();
         
-        // Process each order individually
+        // Process each order individually in separate transactions
         for (int i = 0; i < orderIds.size(); i++) {
             Integer orderId = orderIds.get(i);
             logger.debug("Processing order {} (index {}) in batch", orderId, i);
             
-            OrderSubmitResultDTO result = submitIndividualOrder(orderId, i);
+            OrderSubmitResultDTO result = submitIndividualOrderInTransaction(orderId, i);
             results.add(result);
             
             logger.debug("Order {} processed with status: {}", orderId, result.getStatus());
@@ -196,11 +188,11 @@ public class OrderService {
      * Submit multiple orders in batch to the trade service with parallel processing.
      * This is an enhanced version that processes orders in parallel for better performance.
      * Trade service calls are made concurrently while maintaining individual error handling.
+     * Each order is processed in its own transaction.
      * 
      * @param orderIds List of order IDs to submit
      * @return BatchSubmitResponseDTO containing results for each order
      */
-    @Transactional
     public BatchSubmitResponseDTO submitOrdersBatchParallel(List<Integer> orderIds) {
         logger.info("Starting parallel batch order submission for {} orders", orderIds.size());
         
@@ -219,7 +211,7 @@ public class OrderService {
             // Create CompletableFuture for each order
             List<CompletableFuture<OrderSubmitResultDTO>> futures = IntStream.range(0, orderIds.size())
                     .mapToObj(i -> CompletableFuture.supplyAsync(() -> 
-                            submitIndividualOrder(orderIds.get(i), i), executor))
+                            submitIndividualOrderInTransaction(orderIds.get(i), i), executor))
                     .toList();
             
             // Wait for all futures to complete and collect results
@@ -241,9 +233,22 @@ public class OrderService {
     }
 
     /**
-     * Submit a single order as part of batch processing.
-     * This method handles individual order validation, trade service calls,
-     * and error handling for batch operations.
+     * Submit a single order as part of batch processing with optimized transaction management.
+     * This method minimizes database connection holding time by separating database operations
+     * from external service calls to prevent connection leaks.
+     * 
+     * @param orderId The ID of the order to submit
+     * @param requestIndex The index of this order in the batch request
+     * @return OrderSubmitResultDTO containing the result of the submission
+     */
+    public OrderSubmitResultDTO submitIndividualOrderInTransaction(Integer orderId, Integer requestIndex) {
+        return submitIndividualOrder(orderId, requestIndex);
+    }
+    
+    /**
+     * Submit a single order as part of batch processing with optimized transaction management.
+     * This method separates database operations from external service calls to minimize
+     * connection holding time and prevent connection leaks.
      * 
      * @param orderId The ID of the order to submit
      * @param requestIndex The index of this order in the batch request
@@ -251,14 +256,12 @@ public class OrderService {
      */
     private OrderSubmitResultDTO submitIndividualOrder(Integer orderId, Integer requestIndex) {
         try {
-            // Validate order exists
-            Optional<Order> orderOpt = orderRepository.findById(orderId);
-            if (orderOpt.isEmpty()) {
+            // Step 1: Load and validate order in a short transaction
+            Order order = loadAndValidateOrder(orderId);
+            if (order == null) {
                 logger.debug("Order {} not found during batch submission", orderId);
                 return OrderSubmitResultDTO.failure(orderId, "Order not found", requestIndex);
             }
-            
-            Order order = orderOpt.get();
             
             // Validate order is in NEW status
             if (!order.getStatus().getAbbreviation().equals("NEW")) {
@@ -268,15 +271,19 @@ public class OrderService {
                 return OrderSubmitResultDTO.failure(orderId, errorMessage, requestIndex);
             }
             
-            // Call trade service
+            // Step 2: Call trade service WITHOUT holding database connection
             Integer tradeOrderId = callTradeService(order);
             if (tradeOrderId == null) {
                 logger.warn("Trade service call failed for order {}", orderId);
                 return OrderSubmitResultDTO.failure(orderId, "Trade service submission failed", requestIndex);
             }
             
-            // Update order status and tradeOrderId
-            updateOrderAfterSubmission(order, tradeOrderId);
+            // Step 3: Update order status in a separate short transaction
+            boolean updateSuccess = updateOrderAfterSubmissionSafe(orderId, tradeOrderId);
+            if (!updateSuccess) {
+                logger.warn("Failed to update order {} after successful trade service call", orderId);
+                return OrderSubmitResultDTO.failure(orderId, "Failed to update order status", requestIndex);
+            }
             
             logger.debug("Order {} successfully submitted with tradeOrderId {}", orderId, tradeOrderId);
             return OrderSubmitResultDTO.success(orderId, tradeOrderId, requestIndex);
@@ -285,6 +292,99 @@ public class OrderService {
             logger.error("Unexpected error submitting order {} in batch: {}", orderId, e.getMessage(), e);
             return OrderSubmitResultDTO.failure(orderId, 
                     "Internal error during submission: " + e.getMessage(), requestIndex);
+        }
+    }
+    
+    /**
+     * Load and validate order using manual transaction management with semaphore protection.
+     * 
+     * @param orderId The order ID to load
+     * @return The order if found and valid, null otherwise
+     */
+    public Order loadAndValidateOrder(Integer orderId) {
+        try {
+            // Acquire semaphore with timeout to prevent indefinite waiting
+            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
+                logger.warn("Database operation semaphore timeout for order {} load", orderId);
+                return null;
+            }
+            
+            try {
+                return readOnlyTransactionTemplate.execute(status -> {
+                    try {
+                        return orderRepository.findById(orderId).orElse(null);
+                    } catch (Exception e) {
+                        logger.warn("Failed to load order {}: {}", orderId, e.getMessage());
+                        status.setRollbackOnly();
+                        return null;
+                    }
+                });
+            } finally {
+                databaseOperationSemaphore.release();
+            }
+            
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for database semaphore for order {}", orderId);
+            return null;
+        }
+    }
+    
+    /**
+     * Update order status after successful trade service submission using manual transaction management
+     * with semaphore protection to prevent connection pool exhaustion.
+     * 
+     * @param orderId The order ID to update
+     * @param tradeOrderId The trade order ID from the trade service
+     * @return true if update was successful, false otherwise
+     */
+    public boolean updateOrderAfterSubmissionSafe(Integer orderId, Integer tradeOrderId) {
+        try {
+            // Acquire semaphore with timeout to prevent indefinite waiting
+            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
+                logger.warn("Database operation semaphore timeout for order {} update", orderId);
+                return false;
+            }
+            
+            try {
+                Boolean result = transactionTemplate.execute(status -> {
+                    try {
+                        // Re-load the order to ensure we have the latest version
+                        Optional<Order> orderOpt = orderRepository.findById(orderId);
+                        if (orderOpt.isEmpty()) {
+                            logger.warn("Order {} not found during status update", orderId);
+                            return false;
+                        }
+                        
+                        Order order = orderOpt.get();
+                        
+                        // Double-check the order is still in NEW status
+                        if (!"NEW".equals(order.getStatus().getAbbreviation())) {
+                            logger.warn("Order {} status changed during processing (current: {})", 
+                                    orderId, order.getStatus().getAbbreviation());
+                            return false;
+                        }
+                        
+                        updateOrderAfterSubmission(order, tradeOrderId);
+                        return true;
+                        
+                    } catch (Exception e) {
+                        logger.error("Failed to update order {} after submission: {}", orderId, e.getMessage(), e);
+                        status.setRollbackOnly();
+                        return false;
+                    }
+                });
+                
+                return result != null ? result : false;
+                
+            } finally {
+                databaseOperationSemaphore.release();
+            }
+            
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for database semaphore for order {} update", orderId);
+            return false;
         }
     }
 
@@ -340,15 +440,14 @@ public class OrderService {
 
     /**
      * Update order status to SENT and set tradeOrderId after successful trade service submission.
+     * Uses cached status lookup to minimize database queries.
      * 
      * @param order The order to update
      * @param tradeOrderId The trade order ID returned from the trade service
      */
     private void updateOrderAfterSubmission(Order order, Integer tradeOrderId) {
-        Status sentStatus = statusRepository.findAll().stream()
-                .filter(s -> "SENT".equals(s.getAbbreviation()))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("SENT status not found"));
+        // Use cached validation service to get SENT status efficiently
+        Status sentStatus = getSentStatus();
         
         Order updatedOrder = Order.builder()
                 .id(order.getId())
@@ -367,6 +466,26 @@ public class OrderService {
         orderRepository.save(updatedOrder);
         logger.debug("Updated order {} with tradeOrderId {} and SENT status", 
                 order.getId(), tradeOrderId);
+    }
+    
+    // Cache for SENT status to avoid repeated database lookups
+    private volatile Status cachedSentStatus;
+    
+    /**
+     * Get SENT status with caching to reduce database queries.
+     */
+    private Status getSentStatus() {
+        if (cachedSentStatus == null) {
+            synchronized (this) {
+                if (cachedSentStatus == null) {
+                    cachedSentStatus = statusRepository.findAll().stream()
+                            .filter(s -> "SENT".equals(s.getAbbreviation()))
+                            .findFirst()
+                            .orElseThrow(() -> new RuntimeException("SENT status not found"));
+                }
+            }
+        }
+        return cachedSentStatus;
     }
 
     // Complete mapping from Order to OrderWithDetailsDTO
@@ -717,11 +836,11 @@ public class OrderService {
     /**
      * Process a batch of orders with comprehensive error handling and validation.
      * This method processes each order individually, continuing even if some orders fail.
+     * Each order is processed in its own transaction to avoid holding connections for extended periods.
      * 
      * @param orders List of OrderPostDTO to process (max 1000)
      * @return OrderListResponseDTO containing results for all orders
      */
-    @Transactional
     public OrderListResponseDTO processBatchOrders(List<OrderPostDTO> orders) {
         logger.info("Starting batch order processing for {} orders", orders.size());
         long startTime = System.currentTimeMillis();
@@ -750,10 +869,10 @@ public class OrderService {
         int creationFailures = 0;
         int exceptionFailures = 0;
         
-        // Process each order individually
+        // Process each order individually in separate transactions
         for (int i = 0; i < orders.size(); i++) {
             OrderPostDTO orderDto = orders.get(i);
-            OrderPostResponseDTO result = processIndividualOrder(orderDto, i);
+            OrderPostResponseDTO result = processIndividualOrderInTransaction(orderDto, i);
             orderResults.add(result);
             
             if (result.isSuccess()) {
@@ -806,6 +925,20 @@ public class OrderService {
         
         // Return appropriate response based on results
         return OrderListResponseDTO.fromResults(orderResults);
+    }
+    
+    /**
+     * Process a single order within a batch context with its own transaction.
+     * This method ensures each order is processed in a separate transaction to avoid
+     * holding database connections for extended periods during batch processing.
+     * 
+     * @param orderDto The order to process
+     * @param requestIndex The index of this order in the original batch request
+     * @return OrderPostResponseDTO containing the result
+     */
+    @Transactional
+    public OrderPostResponseDTO processIndividualOrderInTransaction(OrderPostDTO orderDto, int requestIndex) {
+        return processIndividualOrder(orderDto, requestIndex);
     }
     
     /**
@@ -891,25 +1024,29 @@ public class OrderService {
         return null; // Valid
     }
     
+    @Autowired
+    private ValidationCacheService validationCacheService;
+    
     /**
      * Validate that referenced entities exist in the database.
+     * Uses cached validation to reduce database calls during batch processing.
      * 
      * @param dto The order DTO to validate
      * @return Error message if validation fails, null if valid
      */
     private String validateOrderReferences(OrderPostDTO dto) {
-        // Check if blotter exists
-        if (!blotterRepository.existsById(dto.getBlotterId())) {
+        // Check if blotter exists (cached)
+        if (!validationCacheService.blotterExists(dto.getBlotterId())) {
             return String.format("Blotter with ID %d not found", dto.getBlotterId());
         }
         
-        // Check if status exists
-        if (!statusRepository.existsById(dto.getStatusId())) {
+        // Check if status exists (cached)
+        if (!validationCacheService.statusExists(dto.getStatusId())) {
             return String.format("Status with ID %d not found", dto.getStatusId());
         }
         
-        // Check if order type exists
-        if (!orderTypeRepository.existsById(dto.getOrderTypeId())) {
+        // Check if order type exists (cached)
+        if (!validationCacheService.orderTypeExists(dto.getOrderTypeId())) {
             return String.format("Order Type with ID %d not found", dto.getOrderTypeId());
         }
         

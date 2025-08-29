@@ -8,6 +8,7 @@ import org.kasbench.globeco_order_service.dto.OrderListResponseDTO;
 import org.kasbench.globeco_order_service.dto.BatchSubmitRequestDTO;
 import org.kasbench.globeco_order_service.dto.BatchSubmitResponseDTO;
 import org.kasbench.globeco_order_service.service.OrderService;
+import org.kasbench.globeco_order_service.service.BatchProcessingService;
 import org.kasbench.globeco_order_service.service.SortingSpecification;
 import org.kasbench.globeco_order_service.service.FilteringSpecification;
 import org.springframework.data.domain.Page;
@@ -35,6 +36,7 @@ public class OrderController {
     private static final int MAX_LIMIT = 1000;
     
     private final OrderService orderService;
+    private final BatchProcessingService batchProcessingService;
 
     /**
      * Get all orders with support for paging, sorting, and filtering.
@@ -209,8 +211,8 @@ public class OrderController {
                 return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(errorResponse);
             }
             
-            // Process the batch through service layer
-            OrderListResponseDTO response = orderService.processBatchOrders(orders);
+            // Process the batch through controlled batch processing service
+            OrderListResponseDTO response = batchProcessingService.processOrdersWithConnectionControl(orders);
             
             // Determine appropriate HTTP status code based on results
             HttpStatus statusCode = determineHttpStatus(response);
