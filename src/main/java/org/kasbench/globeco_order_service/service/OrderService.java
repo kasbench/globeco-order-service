@@ -64,7 +64,7 @@ public class OrderService {
     private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
     private static final int MAX_BATCH_SIZE = 1000;
     private static final int MAX_SUBMIT_BATCH_SIZE = 100;
-    
+
     private final OrderRepository orderRepository;
     private final StatusRepository statusRepository;
     private final BlotterRepository blotterRepository;
@@ -76,22 +76,22 @@ public class OrderService {
     private final SecurityServiceClient securityServiceClient;
     private final TransactionTemplate transactionTemplate;
     private final TransactionTemplate readOnlyTransactionTemplate;
-    
-    // Semaphore to limit concurrent database operations and prevent connection pool exhaustion
+
+    // Semaphore to limit concurrent database operations and prevent connection pool
+    // exhaustion
     private final Semaphore databaseOperationSemaphore = new Semaphore(25); // Max 25 concurrent DB ops
 
     public OrderService(
-        OrderRepository orderRepository,
-        StatusRepository statusRepository,
-        BlotterRepository blotterRepository,
-        OrderTypeRepository orderTypeRepository,
-        RestTemplate restTemplate,
-        SecurityCacheService securityCacheService,
-        PortfolioCacheService portfolioCacheService,
-        PortfolioServiceClient portfolioServiceClient,
-        SecurityServiceClient securityServiceClient,
-        PlatformTransactionManager transactionManager
-    ) {
+            OrderRepository orderRepository,
+            StatusRepository statusRepository,
+            BlotterRepository blotterRepository,
+            OrderTypeRepository orderTypeRepository,
+            RestTemplate restTemplate,
+            SecurityCacheService securityCacheService,
+            PortfolioCacheService portfolioCacheService,
+            PortfolioServiceClient portfolioServiceClient,
+            SecurityServiceClient securityServiceClient,
+            PlatformTransactionManager transactionManager) {
         this.orderRepository = orderRepository;
         this.statusRepository = statusRepository;
         this.blotterRepository = blotterRepository;
@@ -101,11 +101,11 @@ public class OrderService {
         this.portfolioCacheService = portfolioCacheService;
         this.portfolioServiceClient = portfolioServiceClient;
         this.securityServiceClient = securityServiceClient;
-        
+
         // Create transaction templates for precise control
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.transactionTemplate.setTimeout(5); // 5 second timeout
-        
+
         this.readOnlyTransactionTemplate = new TransactionTemplate(transactionManager);
         this.readOnlyTransactionTemplate.setReadOnly(true);
         this.readOnlyTransactionTemplate.setTimeout(3); // 3 second timeout for reads
@@ -118,7 +118,7 @@ public class OrderService {
         if (!order.getStatus().getAbbreviation().equals("NEW")) {
             return null;
         }
-        
+
         // Prepare trade order data
         TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
                 .orderId(id)
@@ -128,16 +128,16 @@ public class OrderService {
                 .quantity(order.getQuantity())
                 .limitPrice(order.getLimitPrice())
                 .build();
-        
+
         // Call external service (this should be quick)
         Integer tradeOrderId = callTradeService(order);
         if (tradeOrderId == null) {
             return null;
         }
-        
+
         // Update order status efficiently
         updateOrderAfterSubmission(order, tradeOrderId);
-        
+
         // Return the updated order
         Order updatedOrder = orderRepository.findById(id).orElseThrow();
         return toOrderDTO(updatedOrder);
@@ -153,41 +153,44 @@ public class OrderService {
      */
     public BatchSubmitResponseDTO submitOrdersBatch(List<Integer> orderIds) {
         logger.info("Starting batch order submission for {} orders", orderIds.size());
-        
+
         // Validate batch size
         if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
-            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d", 
+            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d",
                     orderIds.size(), MAX_SUBMIT_BATCH_SIZE);
             logger.warn("Batch submission rejected: {}", errorMessage);
             return BatchSubmitResponseDTO.validationFailure(errorMessage);
         }
 
         List<OrderSubmitResultDTO> results = new ArrayList<>();
-        
+
         // Process each order individually in separate transactions
         for (int i = 0; i < orderIds.size(); i++) {
             Integer orderId = orderIds.get(i);
             logger.debug("Processing order {} (index {}) in batch", orderId, i);
-            
+
             OrderSubmitResultDTO result = submitIndividualOrderInTransaction(orderId, i);
             results.add(result);
-            
+
             logger.debug("Order {} processed with status: {}", orderId, result.getStatus());
         }
-        
+
         // Create response based on results
         BatchSubmitResponseDTO response = BatchSubmitResponseDTO.fromResults(results);
-        
+
         logger.info("Batch submission completed: {} successful, {} failed out of {} total",
                 response.getSuccessful(), response.getFailed(), response.getTotalRequested());
-        
+
         return response;
     }
 
     /**
-     * Submit multiple orders in batch to the trade service with parallel processing.
-     * This is an enhanced version that processes orders in parallel for better performance.
-     * Trade service calls are made concurrently while maintaining individual error handling.
+     * Submit multiple orders in batch to the trade service with parallel
+     * processing.
+     * This is an enhanced version that processes orders in parallel for better
+     * performance.
+     * Trade service calls are made concurrently while maintaining individual error
+     * handling.
      * Each order is processed in its own transaction.
      * 
      * @param orderIds List of order IDs to submit
@@ -195,10 +198,10 @@ public class OrderService {
      */
     public BatchSubmitResponseDTO submitOrdersBatchParallel(List<Integer> orderIds) {
         logger.info("Starting parallel batch order submission for {} orders", orderIds.size());
-        
+
         // Validate batch size
         if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
-            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d", 
+            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d",
                     orderIds.size(), MAX_SUBMIT_BATCH_SIZE);
             logger.warn("Parallel batch submission rejected: {}", errorMessage);
             return BatchSubmitResponseDTO.validationFailure(errorMessage);
@@ -206,51 +209,56 @@ public class OrderService {
 
         // Create thread pool for parallel processing
         ExecutorService executor = Executors.newFixedThreadPool(Math.min(orderIds.size(), 10));
-        
+
         try {
             // Create CompletableFuture for each order
             List<CompletableFuture<OrderSubmitResultDTO>> futures = IntStream.range(0, orderIds.size())
-                    .mapToObj(i -> CompletableFuture.supplyAsync(() -> 
-                            submitIndividualOrderInTransaction(orderIds.get(i), i), executor))
+                    .mapToObj(i -> CompletableFuture
+                            .supplyAsync(() -> submitIndividualOrderInTransaction(orderIds.get(i), i), executor))
                     .toList();
-            
+
             // Wait for all futures to complete and collect results
             List<OrderSubmitResultDTO> results = futures.stream()
                     .map(CompletableFuture::join)
                     .toList();
-            
+
             // Create response based on results
             BatchSubmitResponseDTO response = BatchSubmitResponseDTO.fromResults(results);
-            
+
             logger.info("Parallel batch submission completed: {} successful, {} failed out of {} total",
                     response.getSuccessful(), response.getFailed(), response.getTotalRequested());
-            
+
             return response;
-            
+
         } finally {
             executor.shutdown();
         }
     }
 
     /**
-     * Submit a single order as part of batch processing with optimized transaction management.
-     * This method minimizes database connection holding time by separating database operations
+     * Submit a single order as part of batch processing with optimized transaction
+     * management.
+     * This method minimizes database connection holding time by separating database
+     * operations
      * from external service calls to prevent connection leaks.
      * 
-     * @param orderId The ID of the order to submit
+     * @param orderId      The ID of the order to submit
      * @param requestIndex The index of this order in the batch request
      * @return OrderSubmitResultDTO containing the result of the submission
      */
     public OrderSubmitResultDTO submitIndividualOrderInTransaction(Integer orderId, Integer requestIndex) {
         return submitIndividualOrder(orderId, requestIndex);
     }
-    
+
     /**
-     * Submit a single order as part of batch processing with optimized transaction management.
-     * This method separates database operations from external service calls to minimize
+     * Submit a single order as part of batch processing with optimized transaction
+     * management.
+     * This method separates database operations from external service calls to
+     * minimize
      * connection holding time and prevent connection leaks.
+     * Uses additional checks to prevent race conditions and duplicate submissions.
      * 
-     * @param orderId The ID of the order to submit
+     * @param orderId      The ID of the order to submit
      * @param requestIndex The index of this order in the batch request
      * @return OrderSubmitResultDTO containing the result of the submission
      */
@@ -262,41 +270,54 @@ public class OrderService {
                 logger.debug("Order {} not found during batch submission", orderId);
                 return OrderSubmitResultDTO.failure(orderId, "Order not found", requestIndex);
             }
-            
-            // Validate order is in NEW status
+
+            // Validate order is in NEW status AND doesn't already have a tradeOrderId
             if (!order.getStatus().getAbbreviation().equals("NEW")) {
-                String errorMessage = String.format("Order is not in NEW status (current: %s)", 
+                String errorMessage = String.format("Order is not in NEW status (current: %s)",
                         order.getStatus().getAbbreviation());
                 logger.debug("Order {} cannot be submitted: {}", orderId, errorMessage);
                 return OrderSubmitResultDTO.failure(orderId, errorMessage, requestIndex);
             }
-            
+
+            // CRITICAL: Check if order already has a tradeOrderId (prevents duplicate
+            // submissions)
+            if (order.getTradeOrderId() != null) {
+                String errorMessage = String.format("Order already submitted (tradeOrderId: %s)",
+                        order.getTradeOrderId());
+                logger.debug("Order {} already submitted: {}", orderId, errorMessage);
+                return OrderSubmitResultDTO.failure(orderId, errorMessage, requestIndex);
+            }
+
             // Step 2: Call trade service WITHOUT holding database connection
             Integer tradeOrderId = callTradeService(order);
             if (tradeOrderId == null) {
                 logger.warn("Trade service call failed for order {}", orderId);
                 return OrderSubmitResultDTO.failure(orderId, "Trade service submission failed", requestIndex);
             }
-            
-            // Step 3: Update order status in a separate short transaction
+
+            // Step 3: Update order status in a separate short transaction with race
+            // condition protection
             boolean updateSuccess = updateOrderAfterSubmissionSafe(orderId, tradeOrderId);
             if (!updateSuccess) {
-                logger.warn("Failed to update order {} after successful trade service call", orderId);
-                return OrderSubmitResultDTO.failure(orderId, "Failed to update order status", requestIndex);
+                logger.warn("Failed to update order {} after successful trade service call - likely race condition",
+                        orderId);
+                return OrderSubmitResultDTO.failure(orderId,
+                        "Failed to update order status (possible duplicate processing)", requestIndex);
             }
-            
+
             logger.debug("Order {} successfully submitted with tradeOrderId {}", orderId, tradeOrderId);
             return OrderSubmitResultDTO.success(orderId, tradeOrderId, requestIndex);
-            
+
         } catch (Exception e) {
             logger.error("Unexpected error submitting order {} in batch: {}", orderId, e.getMessage(), e);
-            return OrderSubmitResultDTO.failure(orderId, 
+            return OrderSubmitResultDTO.failure(orderId,
                     "Internal error during submission: " + e.getMessage(), requestIndex);
         }
     }
-    
+
     /**
-     * Load and validate order using manual transaction management with semaphore protection.
+     * Load and validate order using manual transaction management with semaphore
+     * protection.
      * 
      * @param orderId The order ID to load
      * @return The order if found and valid, null otherwise
@@ -308,7 +329,7 @@ public class OrderService {
                 logger.warn("Database operation semaphore timeout for order {} load", orderId);
                 return null;
             }
-            
+
             try {
                 return readOnlyTransactionTemplate.execute(status -> {
                     try {
@@ -322,19 +343,21 @@ public class OrderService {
             } finally {
                 databaseOperationSemaphore.release();
             }
-            
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.warn("Interrupted while waiting for database semaphore for order {}", orderId);
             return null;
         }
     }
-    
+
     /**
-     * Update order status after successful trade service submission using manual transaction management
+     * Update order status after successful trade service submission using manual
+     * transaction management
      * with semaphore protection to prevent connection pool exhaustion.
+     * Uses optimistic locking to prevent race conditions.
      * 
-     * @param orderId The order ID to update
+     * @param orderId      The order ID to update
      * @param tradeOrderId The trade order ID from the trade service
      * @return true if update was successful, false otherwise
      */
@@ -345,7 +368,7 @@ public class OrderService {
                 logger.warn("Database operation semaphore timeout for order {} update", orderId);
                 return false;
             }
-            
+
             try {
                 Boolean result = transactionTemplate.execute(status -> {
                     try {
@@ -355,32 +378,48 @@ public class OrderService {
                             logger.warn("Order {} not found during status update", orderId);
                             return false;
                         }
-                        
+
                         Order order = orderOpt.get();
-                        
-                        // Double-check the order is still in NEW status
+
+                        // CRITICAL: Check both status AND that tradeOrderId is not already set
+                        // This prevents duplicate processing even if status hasn't changed yet
                         if (!"NEW".equals(order.getStatus().getAbbreviation())) {
-                            logger.warn("Order {} status changed during processing (current: {})", 
+                            logger.warn("Order {} status changed during processing (current: {})",
                                     orderId, order.getStatus().getAbbreviation());
                             return false;
                         }
-                        
+
+                        if (order.getTradeOrderId() != null) {
+                            logger.warn("Order {} already has tradeOrderId {} - preventing duplicate submission",
+                                    orderId, order.getTradeOrderId());
+                            return false;
+                        }
+
                         updateOrderAfterSubmission(order, tradeOrderId);
                         return true;
-                        
+
+                    } catch (org.springframework.dao.OptimisticLockingFailureException e) {
+                        logger.warn("Optimistic locking failure for order {} - another thread updated it", orderId);
+                        status.setRollbackOnly();
+                        return false;
+                    } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                        logger.warn("Data integrity violation for order {} - likely duplicate key: {}", orderId,
+                                e.getMessage());
+                        status.setRollbackOnly();
+                        return false;
                     } catch (Exception e) {
                         logger.error("Failed to update order {} after submission: {}", orderId, e.getMessage(), e);
                         status.setRollbackOnly();
                         return false;
                     }
                 });
-                
+
                 return result != null ? result : false;
-                
+
             } finally {
                 databaseOperationSemaphore.release();
             }
-            
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.warn("Interrupted while waiting for database semaphore for order {} update", orderId);
@@ -405,50 +444,50 @@ public class OrderService {
                     .quantity(order.getQuantity())
                     .limitPrice(order.getLimitPrice())
                     .build();
-            
+
             logger.debug("Calling trade service for order {}", order.getId());
             ResponseEntity<String> response = restTemplate.postForEntity(
                     "http://globeco-trade-service:8082/api/v1/tradeOrders",
                     new HttpEntity<>(tradeOrder),
-                    String.class
-            );
-            
+                    String.class);
+
             if (response.getStatusCode() == HttpStatus.CREATED) {
                 try {
                     ObjectMapper mapper = new ObjectMapper();
                     JsonNode node = mapper.readTree(response.getBody());
                     if (node.has("id") && node.get("id").isInt()) {
                         Integer tradeOrderId = node.get("id").asInt();
-                        logger.debug("Trade service returned tradeOrderId {} for order {}", 
+                        logger.debug("Trade service returned tradeOrderId {} for order {}",
                                 tradeOrderId, order.getId());
                         return tradeOrderId;
                     }
                 } catch (Exception e) {
-                    logger.error("Failed to parse trade service response for order {}: {}", 
+                    logger.error("Failed to parse trade service response for order {}: {}",
                             order.getId(), e.getMessage());
                 }
             } else {
-                logger.warn("Trade service returned non-success status {} for order {}", 
+                logger.warn("Trade service returned non-success status {} for order {}",
                         response.getStatusCode(), order.getId());
             }
         } catch (Exception e) {
             logger.error("Trade service call failed for order {}: {}", order.getId(), e.getMessage());
         }
-        
+
         return null;
     }
 
     /**
-     * Update order status to SENT and set tradeOrderId after successful trade service submission.
+     * Update order status to SENT and set tradeOrderId after successful trade
+     * service submission.
      * Uses cached status lookup to minimize database queries.
      * 
-     * @param order The order to update
+     * @param order        The order to update
      * @param tradeOrderId The trade order ID returned from the trade service
      */
     private void updateOrderAfterSubmission(Order order, Integer tradeOrderId) {
         // Use cached validation service to get SENT status efficiently
         Status sentStatus = getSentStatus();
-        
+
         Order updatedOrder = Order.builder()
                 .id(order.getId())
                 .blotter(order.getBlotter())
@@ -462,21 +501,22 @@ public class OrderService {
                 .orderTimestamp(order.getOrderTimestamp())
                 .version(order.getVersion())
                 .build();
-        
+
         orderRepository.save(updatedOrder);
-        logger.debug("Updated order {} with tradeOrderId {} and SENT status", 
+        logger.debug("Updated order {} with tradeOrderId {} and SENT status",
                 order.getId(), tradeOrderId);
     }
-    
+
     // Cache for SENT status to avoid repeated database lookups
     private volatile Status cachedSentStatus;
-    
+    private final Object statusCacheLock = new Object();
+
     /**
      * Get SENT status with caching to reduce database queries.
      */
     private Status getSentStatus() {
         if (cachedSentStatus == null) {
-            synchronized (this) {
+            synchronized (statusCacheLock) {
                 if (cachedSentStatus == null) {
                     cachedSentStatus = statusRepository.findAll().stream()
                             .filter(s -> "SENT".equals(s.getAbbreviation()))
@@ -490,8 +530,9 @@ public class OrderService {
 
     // Complete mapping from Order to OrderWithDetailsDTO
     private OrderWithDetailsDTO toDto(Order order) {
-        if (order == null) return null;
-        
+        if (order == null)
+            return null;
+
         // Fetch security information from cache
         SecurityDTO security = null;
         if (order.getSecurityId() != null) {
@@ -501,12 +542,14 @@ public class OrderService {
                     // Create a fallback SecurityDTO with just the ID if service is unavailable
                     security = SecurityDTO.builder()
                             .securityId(order.getSecurityId())
-                            .ticker(null)  // Will be null if service is unavailable
+                            .ticker(null) // Will be null if service is unavailable
                             .build();
-                    logger.debug("Security service unavailable for securityId: {}, using fallback", order.getSecurityId());
+                    logger.debug("Security service unavailable for securityId: {}, using fallback",
+                            order.getSecurityId());
                 }
             } catch (Exception e) {
-                logger.warn("Failed to fetch security data for securityId: {} - {}", order.getSecurityId(), e.getMessage());
+                logger.warn("Failed to fetch security data for securityId: {} - {}", order.getSecurityId(),
+                        e.getMessage());
                 // Create fallback SecurityDTO
                 security = SecurityDTO.builder()
                         .securityId(order.getSecurityId())
@@ -514,7 +557,7 @@ public class OrderService {
                         .build();
             }
         }
-        
+
         // Fetch portfolio information from cache
         PortfolioDTO portfolio = null;
         if (order.getPortfolioId() != null) {
@@ -524,12 +567,14 @@ public class OrderService {
                     // Create a fallback PortfolioDTO with just the ID if service is unavailable
                     portfolio = PortfolioDTO.builder()
                             .portfolioId(order.getPortfolioId())
-                            .name(null)  // Will be null if service is unavailable
+                            .name(null) // Will be null if service is unavailable
                             .build();
-                    logger.debug("Portfolio service unavailable for portfolioId: {}, using fallback", order.getPortfolioId());
+                    logger.debug("Portfolio service unavailable for portfolioId: {}, using fallback",
+                            order.getPortfolioId());
                 }
             } catch (Exception e) {
-                logger.warn("Failed to fetch portfolio data for portfolioId: {} - {}", order.getPortfolioId(), e.getMessage());
+                logger.warn("Failed to fetch portfolio data for portfolioId: {} - {}", order.getPortfolioId(),
+                        e.getMessage());
                 // Create fallback PortfolioDTO
                 portfolio = PortfolioDTO.builder()
                         .portfolioId(order.getPortfolioId())
@@ -537,7 +582,7 @@ public class OrderService {
                         .build();
             }
         }
-        
+
         return OrderWithDetailsDTO.builder()
                 .id(order.getId())
                 .blotter(toBlotterDTO(order.getBlotter()))
@@ -555,7 +600,8 @@ public class OrderService {
 
     // Helper method to convert Blotter entity to BlotterDTO
     private BlotterDTO toBlotterDTO(Blotter blotter) {
-        if (blotter == null) return null;
+        if (blotter == null)
+            return null;
         return BlotterDTO.builder()
                 .id(blotter.getId())
                 .name(blotter.getName())
@@ -565,7 +611,8 @@ public class OrderService {
 
     // Helper method to convert Status entity to StatusDTO
     private StatusDTO toStatusDTO(Status status) {
-        if (status == null) return null;
+        if (status == null)
+            return null;
         return StatusDTO.builder()
                 .id(status.getId())
                 .abbreviation(status.getAbbreviation())
@@ -576,7 +623,8 @@ public class OrderService {
 
     // Helper method to convert OrderType entity to OrderTypeDTO
     private OrderTypeDTO toOrderTypeDTO(OrderType orderType) {
-        if (orderType == null) return null;
+        if (orderType == null)
+            return null;
         return OrderTypeDTO.builder()
                 .id(orderType.getId())
                 .abbreviation(orderType.getAbbreviation())
@@ -589,34 +637,37 @@ public class OrderService {
         List<Order> orders = orderRepository.findAll();
         return orders.stream().map(this::toDto).toList();
     }
-    
+
     /**
      * Get all orders with paging, sorting, and filtering support.
-     * This method properly resolves external service identifiers (security.ticker, portfolio.name)
+     * This method properly resolves external service identifiers (security.ticker,
+     * portfolio.name)
      * to their corresponding IDs before applying database filters.
      * 
-     * @param limit Maximum number of results to return
-     * @param offset Number of results to skip
-     * @param sort Comma-separated list of sort fields with optional direction prefix
+     * @param limit        Maximum number of results to return
+     * @param offset       Number of results to skip
+     * @param sort         Comma-separated list of sort fields with optional
+     *                     direction prefix
      * @param filterParams Map of filter field names to comma-separated values
      * @return Page of orders with pagination metadata
      */
-    public Page<OrderWithDetailsDTO> getAll(Integer limit, Integer offset, String sort, Map<String, String> filterParams) {
-        logger.debug("Getting orders with limit={}, offset={}, sort={}, filters={}", 
+    public Page<OrderWithDetailsDTO> getAll(Integer limit, Integer offset, String sort,
+            Map<String, String> filterParams) {
+        logger.debug("Getting orders with limit={}, offset={}, sort={}, filters={}",
                 limit, offset, sort, filterParams);
-        
+
         // Create Pageable with sorting
         Sort sortSpec = SortingSpecification.parseSort(sort);
         Pageable pageable = PageRequest.of(offset / limit, limit, sortSpec);
-        
+
         // Resolve external service identifiers to IDs
         Map<String, String> resolvedSecurityIds = resolveSecurityTickers(filterParams);
         Map<String, String> resolvedPortfolioIds = resolvePortfolioNames(filterParams);
-        
+
         // Create filtering specification with resolved IDs
         Specification<Order> filterSpec = FilteringSpecification.createFilterSpecification(
-            filterParams, resolvedSecurityIds, resolvedPortfolioIds);
-        
+                filterParams, resolvedSecurityIds, resolvedPortfolioIds);
+
         // Execute query with paging, sorting, and filtering
         Page<Order> orderPage;
         if (filterSpec != null) {
@@ -624,15 +675,15 @@ public class OrderService {
         } else {
             orderPage = orderRepository.findAll(pageable);
         }
-        
-        logger.debug("Found {} orders (total: {}, page: {}/{})", 
-                orderPage.getNumberOfElements(), orderPage.getTotalElements(), 
+
+        logger.debug("Found {} orders (total: {}, page: {}/{})",
+                orderPage.getNumberOfElements(), orderPage.getTotalElements(),
                 orderPage.getNumber() + 1, orderPage.getTotalPages());
-        
+
         // Convert to DTOs with external service data
         return orderPage.map(this::toDto);
     }
-    
+
     /**
      * Resolve security tickers to security IDs using the security service v2 API.
      * 
@@ -642,26 +693,26 @@ public class OrderService {
     private Map<String, String> resolveSecurityTickers(Map<String, String> filterParams) {
         Set<String> tickers = FilteringSpecification.extractSecurityTickers(filterParams);
         Map<String, String> resolvedIds = new HashMap<>();
-        
+
         if (tickers.isEmpty()) {
             return resolvedIds; // No security tickers to resolve
         }
-        
+
         logger.debug("Resolving security tickers to IDs: {}", tickers);
-        
+
         try {
             // Convert Set to List for the service call
             List<String> tickersList = new ArrayList<>(tickers);
-            
+
             // Call the security service to resolve tickers to IDs
             resolvedIds = securityServiceClient.searchSecuritiesByTickers(tickersList);
-            
+
             if (resolvedIds.isEmpty()) {
                 logger.info("No security tickers could be resolved to IDs. Tickers requested: {}", tickers);
             } else {
-                logger.info("Successfully resolved {} of {} security tickers to IDs", 
+                logger.info("Successfully resolved {} of {} security tickers to IDs",
                         resolvedIds.size(), tickers.size());
-                
+
                 // Log which tickers were not resolved
                 Set<String> unresolvedTickers = new HashSet<>(tickers);
                 unresolvedTickers.removeAll(resolvedIds.keySet());
@@ -669,27 +720,29 @@ public class OrderService {
                     logger.info("Unresolved security tickers (will be ignored in filtering): {}", unresolvedTickers);
                 }
             }
-            
+
         } catch (SecurityServiceClient.SecurityServiceException e) {
             logger.error("Security service error while resolving tickers {}: {}", tickers, e.getMessage());
             // Return empty map to skip filtering rather than failing the entire request
             logger.warn("Security ticker filtering will be skipped due to service error");
-            
+
         } catch (Exception e) {
             logger.error("Unexpected error while resolving security tickers {}: {}", tickers, e.getMessage(), e);
             // Return empty map to skip filtering rather than failing the entire request
             logger.warn("Security ticker filtering will be skipped due to unexpected error");
         }
-        
+
         return resolvedIds;
     }
-    
+
     /**
      * Resolve portfolio names to portfolio IDs using the portfolio service.
      * 
-     * CURRENT LIMITATION: The portfolio service only supports lookup by portfolioId,
+     * CURRENT LIMITATION: The portfolio service only supports lookup by
+     * portfolioId,
      * not by name. This filtering feature cannot work until the portfolio service
-     * provides an endpoint to search portfolios by name (e.g., GET /api/v1/portfolios?name=MyPortfolio).
+     * provides an endpoint to search portfolios by name (e.g., GET
+     * /api/v1/portfolios?name=MyPortfolio).
      * 
      * @param filterParams Map of filter parameters
      * @return Empty map (portfolio name filtering is not currently supported)
@@ -697,26 +750,26 @@ public class OrderService {
     private Map<String, String> resolvePortfolioNames(Map<String, String> filterParams) {
         Set<String> names = FilteringSpecification.extractPortfolioNames(filterParams);
         Map<String, String> resolvedIds = new HashMap<>();
-        
+
         if (names.isEmpty()) {
             return resolvedIds; // No portfolio names to resolve
         }
-        
+
         logger.debug("Resolving portfolio names to IDs: {}", names);
-        
+
         try {
             // Convert Set to List for the service call
             List<String> namesList = new ArrayList<>(names);
-            
+
             // Call the portfolio service to resolve names to IDs
             resolvedIds = portfolioServiceClient.searchPortfoliosByNames(namesList);
-            
+
             if (resolvedIds.isEmpty()) {
                 logger.info("No portfolio names could be resolved to IDs. Names requested: {}", names);
             } else {
-                logger.info("Successfully resolved {} of {} portfolio names to IDs", 
+                logger.info("Successfully resolved {} of {} portfolio names to IDs",
                         resolvedIds.size(), names.size());
-                
+
                 // Log which names were not resolved
                 Set<String> unresolvedNames = new HashSet<>(names);
                 unresolvedNames.removeAll(resolvedIds.keySet());
@@ -724,18 +777,18 @@ public class OrderService {
                     logger.info("Unresolved portfolio names (will be ignored in filtering): {}", unresolvedNames);
                 }
             }
-            
+
         } catch (PortfolioServiceClient.PortfolioServiceException e) {
             logger.error("Portfolio service error while resolving names {}: {}", names, e.getMessage());
             // Return empty map to skip filtering rather than failing the entire request
             logger.warn("Portfolio name filtering will be skipped due to service error");
-            
+
         } catch (Exception e) {
             logger.error("Unexpected error while resolving portfolio names {}: {}", names, e.getMessage(), e);
             // Return empty map to skip filtering rather than failing the entire request
             logger.warn("Portfolio name filtering will be skipped due to unexpected error");
         }
-        
+
         return resolvedIds;
     }
 
@@ -746,7 +799,7 @@ public class OrderService {
     public OrderWithDetailsDTO create(OrderPostDTO dto) {
         try {
             Order order = new Order();
-            
+
             // Fetch and validate blotter
             Blotter blotter = blotterRepository.findById(dto.getBlotterId()).orElse(null);
             if (blotter == null) {
@@ -754,7 +807,7 @@ public class OrderService {
                 return null;
             }
             order.setBlotter(blotter);
-            
+
             // Fetch and validate status
             Status status = statusRepository.findById(dto.getStatusId()).orElse(null);
             if (status == null) {
@@ -762,7 +815,7 @@ public class OrderService {
                 return null;
             }
             order.setStatus(status);
-            
+
             // Fetch and validate order type
             OrderType orderType = orderTypeRepository.findById(dto.getOrderTypeId()).orElse(null);
             if (orderType == null) {
@@ -770,7 +823,7 @@ public class OrderService {
                 return null;
             }
             order.setOrderType(orderType);
-            
+
             // Set remaining fields
             order.setPortfolioId(dto.getPortfolioId());
             order.setSecurityId(dto.getSecurityId());
@@ -779,11 +832,11 @@ public class OrderService {
             order.setTradeOrderId(dto.getTradeOrderId());
             order.setOrderTimestamp(dto.getOrderTimestamp());
             order.setVersion(dto.getVersion());
-            
+
             Order saved = orderRepository.save(order);
             logger.debug("Order created successfully with ID {}", saved.getId());
             return toDto(saved);
-            
+
         } catch (Exception e) {
             logger.info("Exception during order creation: {}", e.getMessage(), e);
             return null;
@@ -817,7 +870,8 @@ public class OrderService {
 
     // Add a mapping method from Order to OrderDTO
     private OrderDTO toOrderDTO(Order order) {
-        if (order == null) return null;
+        if (order == null)
+            return null;
         return OrderDTO.builder()
                 .id(order.getId())
                 .blotterId(order.getBlotter() != null ? order.getBlotter().getId() : null)
@@ -835,8 +889,10 @@ public class OrderService {
 
     /**
      * Process a batch of orders with comprehensive error handling and validation.
-     * This method processes each order individually, continuing even if some orders fail.
-     * Each order is processed in its own transaction to avoid holding connections for extended periods.
+     * This method processes each order individually, continuing even if some orders
+     * fail.
+     * Each order is processed in its own transaction to avoid holding connections
+     * for extended periods.
      * 
      * @param orders List of OrderPostDTO to process (max 1000)
      * @return OrderListResponseDTO containing results for all orders
@@ -844,73 +900,74 @@ public class OrderService {
     public OrderListResponseDTO processBatchOrders(List<OrderPostDTO> orders) {
         logger.info("Starting batch order processing for {} orders", orders.size());
         long startTime = System.currentTimeMillis();
-        
+
         // Validate batch size
         if (orders.size() > MAX_BATCH_SIZE) {
-            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d", 
+            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d",
                     orders.size(), MAX_BATCH_SIZE);
             logger.warn("Batch processing rejected: {}", errorMessage);
             return OrderListResponseDTO.validationFailure(errorMessage);
         }
-        
+
         // Handle empty batch
         if (orders.isEmpty()) {
             logger.warn("Batch processing rejected: empty order list");
             return OrderListResponseDTO.validationFailure("No orders provided for processing");
         }
-        
+
         List<OrderPostResponseDTO> orderResults = new ArrayList<>();
         int successCount = 0;
         int failureCount = 0;
-        
+
         // Track failure patterns for better diagnostics
         int validationFailures = 0;
         int referenceFailures = 0;
         int creationFailures = 0;
         int exceptionFailures = 0;
-        
+
         // Process each order individually in separate transactions
         for (int i = 0; i < orders.size(); i++) {
             OrderPostDTO orderDto = orders.get(i);
             OrderPostResponseDTO result = processIndividualOrderInTransaction(orderDto, i);
             orderResults.add(result);
-            
+
             if (result.isSuccess()) {
                 successCount++;
             } else {
                 failureCount++;
-                
+
                 // Categorize failure types for reporting
                 String errorMessage = result.getMessage();
                 if (errorMessage != null) {
-                    if (errorMessage.contains("is required") || 
-                        errorMessage.contains("must be positive") || 
-                        errorMessage.contains("data is required")) {
+                    if (errorMessage.contains("is required") ||
+                            errorMessage.contains("must be positive") ||
+                            errorMessage.contains("data is required")) {
                         validationFailures++;
                     } else if (errorMessage.contains("not found")) {
                         referenceFailures++;
                     } else if (errorMessage.contains("Failed to create order")) {
                         creationFailures++;
-                    } else if (errorMessage.contains("Internal error") || 
-                               errorMessage.contains("Unexpected error")) {
+                    } else if (errorMessage.contains("Internal error") ||
+                            errorMessage.contains("Unexpected error")) {
                         exceptionFailures++;
                     }
                 }
             }
         }
-        
+
         long endTime = System.currentTimeMillis();
         long processingTime = endTime - startTime;
-        
+
         // Log batch processing metrics with failure breakdown
         logger.info("Batch processing completed: {} total, {} successful, {} failed, {}ms processing time",
                 orders.size(), successCount, failureCount, processingTime);
-        
+
         // Log failure breakdown if there were failures
         if (failureCount > 0) {
-            logger.info("Failure breakdown: {} validation errors, {} reference errors, {} creation errors, {} exceptions",
+            logger.info(
+                    "Failure breakdown: {} validation errors, {} reference errors, {} creation errors, {} exceptions",
                     validationFailures, referenceFailures, creationFailures, exceptionFailures);
-            
+
             // Log first few failure examples for diagnostics
             int exampleCount = Math.min(3, failureCount);
             logger.info("Sample failure messages from first {} failed orders:", exampleCount);
@@ -922,17 +979,18 @@ public class OrderService {
                 }
             }
         }
-        
+
         // Return appropriate response based on results
         return OrderListResponseDTO.fromResults(orderResults);
     }
-    
+
     /**
      * Process a single order within a batch context with its own transaction.
-     * This method ensures each order is processed in a separate transaction to avoid
+     * This method ensures each order is processed in a separate transaction to
+     * avoid
      * holding database connections for extended periods during batch processing.
      * 
-     * @param orderDto The order to process
+     * @param orderDto     The order to process
      * @param requestIndex The index of this order in the original batch request
      * @return OrderPostResponseDTO containing the result
      */
@@ -940,12 +998,12 @@ public class OrderService {
     public OrderPostResponseDTO processIndividualOrderInTransaction(OrderPostDTO orderDto, int requestIndex) {
         return processIndividualOrder(orderDto, requestIndex);
     }
-    
+
     /**
      * Process a single order within a batch context.
      * This method handles all individual order validation and processing logic.
      * 
-     * @param orderDto The order to process
+     * @param orderDto     The order to process
      * @param requestIndex The index of this order in the original batch request
      * @return OrderPostResponseDTO containing the result
      */
@@ -957,31 +1015,32 @@ public class OrderService {
                 logger.info("Order validation failed at index {}: {}", requestIndex, validationError);
                 return OrderPostResponseDTO.failure(validationError, requestIndex);
             }
-            
+
             // Validate foreign key references exist
             String referenceError = validateOrderReferences(orderDto);
             if (referenceError != null) {
                 logger.info("Order reference validation failed at index {}: {}", requestIndex, referenceError);
                 return OrderPostResponseDTO.failure(referenceError, requestIndex);
             }
-            
+
             // Create the order using existing logic
             OrderWithDetailsDTO createdOrder = create(orderDto);
             if (createdOrder == null) {
-                logger.info("Order creation returned null at index {}: Failed to create order - unknown error", requestIndex);
+                logger.info("Order creation returned null at index {}: Failed to create order - unknown error",
+                        requestIndex);
                 return OrderPostResponseDTO.failure("Failed to create order: unknown error", requestIndex);
             }
-            
+
             logger.debug("Order created successfully at index {} with ID {}", requestIndex, createdOrder.getId());
             return OrderPostResponseDTO.success(createdOrder, createdOrder.getId().longValue(), requestIndex);
-            
+
         } catch (Exception e) {
             logger.info("Unexpected error processing order at index {}: {}", requestIndex, e.getMessage(), e);
             return OrderPostResponseDTO.failure(
                     "Internal error processing order: " + e.getMessage(), requestIndex);
         }
     }
-    
+
     /**
      * Validate basic required fields in OrderPostDTO.
      * 
@@ -992,41 +1051,41 @@ public class OrderService {
         if (dto == null) {
             return "Order data is required";
         }
-        
+
         if (dto.getBlotterId() == null) {
             return "Blotter ID is required";
         }
-        
+
         if (dto.getStatusId() == null) {
             return "Status ID is required";
         }
-        
+
         if (dto.getPortfolioId() == null || dto.getPortfolioId().trim().isEmpty()) {
             return "Portfolio ID is required";
         }
-        
+
         if (dto.getOrderTypeId() == null) {
             return "Order Type ID is required";
         }
-        
+
         if (dto.getSecurityId() == null || dto.getSecurityId().trim().isEmpty()) {
             return "Security ID is required";
         }
-        
+
         if (dto.getQuantity() == null || dto.getQuantity().signum() <= 0) {
             return "Quantity must be positive";
         }
-        
+
         if (dto.getLimitPrice() != null && dto.getLimitPrice().signum() <= 0) {
             return "Limit price must be positive when provided";
         }
-        
+
         return null; // Valid
     }
-    
+
     @Autowired
     private ValidationCacheService validationCacheService;
-    
+
     /**
      * Validate that referenced entities exist in the database.
      * Uses cached validation to reduce database calls during batch processing.
@@ -1039,17 +1098,17 @@ public class OrderService {
         if (!validationCacheService.blotterExists(dto.getBlotterId())) {
             return String.format("Blotter with ID %d not found", dto.getBlotterId());
         }
-        
+
         // Check if status exists (cached)
         if (!validationCacheService.statusExists(dto.getStatusId())) {
             return String.format("Status with ID %d not found", dto.getStatusId());
         }
-        
+
         // Check if order type exists (cached)
         if (!validationCacheService.orderTypeExists(dto.getOrderTypeId())) {
             return String.format("Order Type with ID %d not found", dto.getOrderTypeId());
         }
-        
+
         return null; // Valid
     }
-} 
+}
