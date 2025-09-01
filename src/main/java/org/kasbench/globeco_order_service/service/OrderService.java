@@ -991,7 +991,7 @@ public class OrderService {
                 status = "FAILURE";
                 message = String.format("All %d orders failed to submit", total);
             } else {
-                status = "PARTIAL_SUCCESS";
+                status = "PARTIAL";
                 message = String.format("%d of %d orders submitted successfully", successful, total);
             }
 
