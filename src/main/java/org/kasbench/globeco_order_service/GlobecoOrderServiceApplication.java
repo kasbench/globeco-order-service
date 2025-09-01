@@ -44,13 +44,19 @@ public class GlobecoOrderServiceApplication {
 	@Bean
 	public RestTemplate restTemplate(CloseableHttpClient httpClient,
 									 @Value("${portfolio.service.url:http://globeco-portfolio-service:8000}") String portfolioServiceUrl,
-									 @Value("${security.service.url:http://globeco-security-service:8000}") String securityServiceUrl) {
+									 @Value("${security.service.url:http://globeco-security-service:8000}") String securityServiceUrl,
+									 @Value("${portfolio.service.timeout:5000}") int portfolioServiceTimeout,
+									 @Value("${security.service.timeout:5000}") int securityServiceTimeout,
+									 @Value("${trade.service.timeout:5000}") int tradeServiceTimeout) {
+		
+		// Use the maximum timeout among all services to ensure compatibility
+		int maxTimeout = Math.max(Math.max(portfolioServiceTimeout, securityServiceTimeout), tradeServiceTimeout);
 		
 		HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
 		factory.setHttpClient(httpClient);
-		factory.setConnectTimeout(5000);
-		factory.setConnectionRequestTimeout(5000);
-		factory.setReadTimeout(10000); // Add read timeout to prevent hanging connections
+		factory.setConnectTimeout(maxTimeout);
+		factory.setConnectionRequestTimeout(maxTimeout);
+		factory.setReadTimeout(maxTimeout);
 		
 		RestTemplate restTemplate = new RestTemplate(factory);
 		
