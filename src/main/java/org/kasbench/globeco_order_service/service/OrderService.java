@@ -28,6 +28,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.kasbench.globeco_order_service.dto.OrderWithDetailsDTO;
 import org.kasbench.globeco_order_service.dto.OrderPostDTO;
 import org.kasbench.globeco_order_service.dto.OrderDTO;
@@ -76,6 +77,8 @@ public class OrderService {
     private final SecurityServiceClient securityServiceClient;
     private final TransactionTemplate transactionTemplate;
     private final TransactionTemplate readOnlyTransactionTemplate;
+    private final String tradeServiceUrl;
+    private final int tradeServiceTimeout;
 
     // Semaphore to limit concurrent database operations and prevent connection pool
     // exhaustion
@@ -91,7 +94,9 @@ public class OrderService {
             PortfolioCacheService portfolioCacheService,
             PortfolioServiceClient portfolioServiceClient,
             SecurityServiceClient securityServiceClient,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            @Value("${trade.service.url:http://globeco-trade-service:8082}") String tradeServiceUrl,
+            @Value("${trade.service.timeout:5000}") int tradeServiceTimeout) {
         this.orderRepository = orderRepository;
         this.statusRepository = statusRepository;
         this.blotterRepository = blotterRepository;
@@ -101,6 +106,8 @@ public class OrderService {
         this.portfolioCacheService = portfolioCacheService;
         this.portfolioServiceClient = portfolioServiceClient;
         this.securityServiceClient = securityServiceClient;
+        this.tradeServiceUrl = tradeServiceUrl;
+        this.tradeServiceTimeout = tradeServiceTimeout;
 
         // Create transaction templates for precise control
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -588,12 +595,13 @@ public class OrderService {
                     .limitPrice(order.getLimitPrice())
                     .build();
 
+            String fullUrl = tradeServiceUrl + "/api/v1/tradeOrders";
             logger.info(
-                    "DUPLICATE_TRACKING: Sending HTTP POST to trade service for orderId={}, thread={}, timestamp={}",
-                    order.getId(), threadName, callStart);
+                    "DUPLICATE_TRACKING: Sending HTTP POST to trade service for orderId={}, url={}, thread={}, timestamp={}",
+                    order.getId(), fullUrl, threadName, callStart);
 
             ResponseEntity<String> response = restTemplate.postForEntity(
-                    "http://globeco-trade-service:8082/api/v1/tradeOrders",
+                    fullUrl,
                     new HttpEntity<>(tradeOrder),
                     String.class);
 
