@@ -47,6 +47,7 @@ import java.util.stream.IntStream;
 import java.util.Set;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.math.BigDecimal;
 import org.kasbench.globeco_order_service.service.SecurityCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioCacheService;
@@ -993,6 +994,119 @@ public class OrderService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.warn("Interrupted while waiting for database semaphore for order {} status update", orderId);
+        }
+    }
+
+    /**
+     * Update order statuses from bulk response using efficient batch operations.
+     * Handles partial success scenarios where some orders succeed and others fail.
+     * Uses batch update operations to minimize database connections.
+     * 
+     * @param orders List of orders that were submitted in the bulk request
+     * @param bulkResponse The bulk response from the trade service
+     */
+    public void updateOrderStatusesFromBulkResponse(List<Order> orders, BulkTradeOrderResponseDTO bulkResponse) {
+        if (orders == null || orders.isEmpty() || bulkResponse == null) {
+            logger.warn("Invalid parameters for bulk status update: orders={}, bulkResponse={}", 
+                    orders != null ? orders.size() : "null", bulkResponse != null ? "present" : "null");
+            return;
+        }
+
+        logger.info("Updating order statuses from bulk response: {} orders, {} results", 
+                orders.size(), bulkResponse.getResults() != null ? bulkResponse.getResults().size() : 0);
+
+        try {
+            // Acquire semaphore to prevent database connection exhaustion
+            if (!databaseOperationSemaphore.tryAcquire(5, TimeUnit.SECONDS)) {
+                logger.error("Database operation semaphore timeout for bulk status update");
+                return;
+            }
+
+            try {
+                transactionTemplate.execute(status -> {
+                    try {
+                        // Create maps for efficient lookups
+                        Map<Integer, Order> orderMap = orders.stream()
+                                .collect(HashMap::new, (map, order) -> map.put(order.getId(), order), HashMap::putAll);
+                        
+                        Map<Integer, TradeOrderResultDTO> resultMap = new HashMap<>();
+                        if (bulkResponse.getResults() != null) {
+                            for (TradeOrderResultDTO result : bulkResponse.getResults()) {
+                                if (result.getRequestIndex() != null && result.getRequestIndex() < orders.size()) {
+                                    Order order = orders.get(result.getRequestIndex());
+                                    if (order != null) {
+                                        resultMap.put(order.getId(), result);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Get SENT status once for all successful updates
+                        Status sentStatus = getSentStatus();
+                        
+                        // Track successful and failed updates
+                        List<Order> successfulOrders = new ArrayList<>();
+                        List<Order> failedOrders = new ArrayList<>();
+                        
+                        // Process each order based on its result
+                        for (Order order : orders) {
+                            TradeOrderResultDTO result = resultMap.get(order.getId());
+                            
+                            if (result != null && result.isSuccess() && result.getTradeOrderId() != null) {
+                                // Order was successfully processed by trade service
+                                Order updatedOrder = Order.builder()
+                                        .id(order.getId())
+                                        .blotter(order.getBlotter())
+                                        .status(sentStatus)
+                                        .portfolioId(order.getPortfolioId())
+                                        .orderType(order.getOrderType())
+                                        .securityId(order.getSecurityId())
+                                        .quantity(order.getQuantity())
+                                        .limitPrice(order.getLimitPrice())
+                                        .tradeOrderId(result.getTradeOrderId())
+                                        .orderTimestamp(order.getOrderTimestamp())
+                                        .version(order.getVersion())
+                                        .build();
+                                
+                                successfulOrders.add(updatedOrder);
+                                logger.debug("Prepared order {} for successful update with tradeOrderId {}", 
+                                        order.getId(), result.getTradeOrderId());
+                            } else {
+                                // Order failed or no result found - leave in NEW status
+                                failedOrders.add(order);
+                                String failureReason = result != null ? result.getMessage() : "No result found in bulk response";
+                                logger.debug("Order {} failed in bulk submission: {}", order.getId(), failureReason);
+                            }
+                        }
+                        
+                        // Perform batch updates for successful orders
+                        if (!successfulOrders.isEmpty()) {
+                            logger.info("Performing batch update for {} successful orders", successfulOrders.size());
+                            orderRepository.saveAll(successfulOrders);
+                            logger.info("Successfully updated {} orders to SENT status with trade order IDs", 
+                                    successfulOrders.size());
+                        }
+                        
+                        // Log summary of batch update operation
+                        logger.info("Bulk status update completed: {} successful, {} failed out of {} total orders", 
+                                successfulOrders.size(), failedOrders.size(), orders.size());
+                        
+                        return null;
+                        
+                    } catch (Exception e) {
+                        logger.error("Failed to update order statuses from bulk response: {}", e.getMessage(), e);
+                        status.setRollbackOnly();
+                        throw new RuntimeException("Bulk status update failed", e);
+                    }
+                });
+
+            } finally {
+                databaseOperationSemaphore.release();
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Interrupted while waiting for database semaphore for bulk status update");
         }
     }
 
