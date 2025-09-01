@@ -154,6 +154,14 @@ public class OrderService {
     public BatchSubmitResponseDTO submitOrdersBatch(List<Integer> orderIds) {
         logger.info("Starting batch order submission for {} orders", orderIds.size());
 
+        // Check for duplicate order IDs in the request
+        Set<Integer> uniqueOrderIds = new HashSet<>(orderIds);
+        if (uniqueOrderIds.size() != orderIds.size()) {
+            logger.warn(
+                    "DUPLICATE_TRACKING: Duplicate order IDs detected in batch request! Total: {}, Unique: {}, OrderIds: {}",
+                    orderIds.size(), uniqueOrderIds.size(), orderIds);
+        }
+
         // Validate batch size
         if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
             String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d",
@@ -198,6 +206,14 @@ public class OrderService {
      */
     public BatchSubmitResponseDTO submitOrdersBatchParallel(List<Integer> orderIds) {
         logger.info("Starting parallel batch order submission for {} orders", orderIds.size());
+
+        // Check for duplicate order IDs in the request
+        Set<Integer> uniqueOrderIds = new HashSet<>(orderIds);
+        if (uniqueOrderIds.size() != orderIds.size()) {
+            logger.warn(
+                    "DUPLICATE_TRACKING: Duplicate order IDs detected in PARALLEL batch request! Total: {}, Unique: {}, OrderIds: {}",
+                    orderIds.size(), uniqueOrderIds.size(), orderIds);
+        }
 
         // Validate batch size
         if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
@@ -253,63 +269,101 @@ public class OrderService {
     /**
      * Submit a single order as part of batch processing with optimized transaction
      * management.
-     * This method separates database operations from external service calls to
-     * minimize
-     * connection holding time and prevent connection leaks.
-     * Uses additional checks to prevent race conditions and duplicate submissions.
+     * This method uses atomic reservation to prevent race conditions and duplicate
+     * submissions.
      * 
      * @param orderId      The ID of the order to submit
      * @param requestIndex The index of this order in the batch request
      * @return OrderSubmitResultDTO containing the result of the submission
      */
     private OrderSubmitResultDTO submitIndividualOrder(Integer orderId, Integer requestIndex) {
+        String threadName = Thread.currentThread().getName();
+        long startTime = System.currentTimeMillis();
+
+        logger.info("DUPLICATE_TRACKING: Starting submission for orderId={}, requestIndex={}, thread={}, timestamp={}",
+                orderId, requestIndex, threadName, startTime);
+
         try {
-            // Step 1: Load and validate order in a short transaction
-            Order order = loadAndValidateOrder(orderId);
-            if (order == null) {
-                logger.debug("Order {} not found during batch submission", orderId);
-                return OrderSubmitResultDTO.failure(orderId, "Order not found", requestIndex);
-            }
+            // Step 1: Atomically reserve the order for submission
+            // This prevents race conditions by using database-level atomic operations
+            logger.info("DUPLICATE_TRACKING: Attempting atomic reservation for orderId={}, thread={}", orderId,
+                    threadName);
+            boolean reserved = atomicallyReserveOrderForSubmission(orderId);
 
-            // Validate order is in NEW status AND doesn't already have a tradeOrderId
-            if (!order.getStatus().getAbbreviation().equals("NEW")) {
-                String errorMessage = String.format("Order is not in NEW status (current: %s)",
-                        order.getStatus().getAbbreviation());
-                logger.debug("Order {} cannot be submitted: {}", orderId, errorMessage);
-                return OrderSubmitResultDTO.failure(orderId, errorMessage, requestIndex);
-            }
-
-            // CRITICAL: Check if order already has a tradeOrderId (prevents duplicate
-            // submissions)
-            if (order.getTradeOrderId() != null) {
-                String errorMessage = String.format("Order already submitted (tradeOrderId: %s)",
-                        order.getTradeOrderId());
-                logger.debug("Order {} already submitted: {}", orderId, errorMessage);
-                return OrderSubmitResultDTO.failure(orderId, errorMessage, requestIndex);
-            }
-
-            // Step 2: Call trade service WITHOUT holding database connection
-            Integer tradeOrderId = callTradeService(order);
-            if (tradeOrderId == null) {
-                logger.warn("Trade service call failed for order {}", orderId);
-                return OrderSubmitResultDTO.failure(orderId, "Trade service submission failed", requestIndex);
-            }
-
-            // Step 3: Update order status in a separate short transaction with race
-            // condition protection
-            boolean updateSuccess = updateOrderAfterSubmissionSafe(orderId, tradeOrderId);
-            if (!updateSuccess) {
-                logger.warn("Failed to update order {} after successful trade service call - likely race condition",
-                        orderId);
+            if (!reserved) {
+                logger.warn("DUPLICATE_TRACKING: Failed to reserve order {} - already reserved or invalid, thread={}",
+                        orderId, threadName);
                 return OrderSubmitResultDTO.failure(orderId,
-                        "Failed to update order status (possible duplicate processing)", requestIndex);
+                        "Order already being processed or not available for submission", requestIndex);
             }
 
-            logger.debug("Order {} successfully submitted with tradeOrderId {}", orderId, tradeOrderId);
-            return OrderSubmitResultDTO.success(orderId, tradeOrderId, requestIndex);
+            logger.info("DUPLICATE_TRACKING: Successfully reserved order {} for submission, thread={}", orderId,
+                    threadName);
+
+            try {
+                // Step 2: Load order details for trade service call
+                Order order = loadAndValidateOrder(orderId);
+                if (order == null) {
+                    logger.warn(
+                            "DUPLICATE_TRACKING: Order {} not found after reservation, releasing reservation, thread={}",
+                            orderId, threadName);
+                    releaseOrderReservation(orderId);
+                    return OrderSubmitResultDTO.failure(orderId, "Order not found", requestIndex);
+                }
+
+                // Step 3: Call trade service WITHOUT holding database connection
+                logger.info("DUPLICATE_TRACKING: Calling trade service for reserved order {}, thread={}", orderId,
+                        threadName);
+                long tradeServiceStart = System.currentTimeMillis();
+                Integer tradeOrderId = callTradeService(order);
+                long tradeServiceEnd = System.currentTimeMillis();
+
+                if (tradeOrderId == null) {
+                    logger.warn(
+                            "DUPLICATE_TRACKING: Trade service call failed for order {}, releasing reservation, thread={}",
+                            orderId, threadName);
+                    releaseOrderReservation(orderId);
+                    return OrderSubmitResultDTO.failure(orderId, "Trade service submission failed", requestIndex);
+                }
+
+                logger.info(
+                        "DUPLICATE_TRACKING: Trade service returned tradeOrderId={} for order {} in {}ms, thread={}",
+                        tradeOrderId, orderId, (tradeServiceEnd - tradeServiceStart), threadName);
+
+                // Step 4: Update the reserved order with the actual trade order ID
+                logger.info("DUPLICATE_TRACKING: Updating reserved order {} with tradeOrderId={}, thread={}",
+                        orderId, tradeOrderId, threadName);
+                boolean updateSuccess = updateReservedOrderWithTradeOrderId(orderId, tradeOrderId);
+
+                if (!updateSuccess) {
+                    logger.error(
+                            "DUPLICATE_TRACKING: Failed to update reserved order {} with tradeOrderId={}, thread={} - THIS SHOULD NOT HAPPEN!",
+                            orderId, tradeOrderId, threadName);
+                    // Don't release reservation here as the order might be in an inconsistent state
+                    return OrderSubmitResultDTO.failure(orderId,
+                            "Failed to update order after successful trade service call", requestIndex);
+                }
+
+                // Step 5: Update order status to SENT
+                updateOrderStatusToSent(orderId);
+
+                long totalTime = System.currentTimeMillis() - startTime;
+                logger.info(
+                        "DUPLICATE_TRACKING: Order {} successfully submitted with tradeOrderId={} in {}ms, thread={}",
+                        orderId, tradeOrderId, totalTime, threadName);
+                return OrderSubmitResultDTO.success(orderId, tradeOrderId, requestIndex);
+
+            } catch (Exception e) {
+                logger.error(
+                        "DUPLICATE_TRACKING: Error during submission of reserved order {}, releasing reservation, thread={}: {}",
+                        orderId, threadName, e.getMessage(), e);
+                releaseOrderReservation(orderId);
+                throw e;
+            }
 
         } catch (Exception e) {
-            logger.error("Unexpected error submitting order {} in batch: {}", orderId, e.getMessage(), e);
+            logger.error("DUPLICATE_TRACKING: Unexpected error submitting order {} in batch: {}, thread={}",
+                    orderId, e.getMessage(), threadName, e);
             return OrderSubmitResultDTO.failure(orderId,
                     "Internal error during submission: " + e.getMessage(), requestIndex);
         }
@@ -352,6 +406,62 @@ public class OrderService {
     }
 
     /**
+     * Atomically reserve an order for submission by setting a processing flag.
+     * This prevents race conditions by using database-level atomic operations.
+     * 
+     * @param orderId The order ID to reserve
+     * @return true if successfully reserved, false if already reserved or invalid
+     */
+    public boolean atomicallyReserveOrderForSubmission(Integer orderId) {
+        String threadName = Thread.currentThread().getName();
+
+        try {
+            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
+                logger.warn("Database operation semaphore timeout for order {} reservation", orderId);
+                return false;
+            }
+
+            try {
+                Boolean result = transactionTemplate.execute(status -> {
+                    try {
+                        logger.info(
+                                "DUPLICATE_TRACKING: Attempting atomic reservation for orderId={} (will use -{} as reservation value), thread={}",
+                                orderId, orderId, threadName);
+
+                        // Use a custom query to atomically check and update
+                        // This will only update if status='NEW' AND tradeOrderId IS NULL
+                        // Sets tradeOrderId to negative order ID to ensure uniqueness
+                        int updatedRows = orderRepository.atomicallyReserveForSubmission(orderId);
+
+                        boolean success = updatedRows > 0;
+                        logger.info(
+                                "DUPLICATE_TRACKING: Atomic reservation for orderId={}, success={}, updatedRows={}, reservationValue={}, thread={}",
+                                orderId, success, updatedRows, success ? -orderId : "N/A", threadName);
+
+                        return success;
+
+                    } catch (Exception e) {
+                        logger.error("DUPLICATE_TRACKING: Failed to atomically reserve order {} - {}, thread={}",
+                                orderId, e.getMessage(), threadName);
+                        status.setRollbackOnly();
+                        return false;
+                    }
+                });
+
+                return result != null ? result : false;
+
+            } finally {
+                databaseOperationSemaphore.release();
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for database semaphore for order {} reservation", orderId);
+            return false;
+        }
+    }
+
+    /**
      * Update order status after successful trade service submission using manual
      * transaction management
      * with semaphore protection to prevent connection pool exhaustion.
@@ -362,6 +472,12 @@ public class OrderService {
      * @return true if update was successful, false otherwise
      */
     public boolean updateOrderAfterSubmissionSafe(Integer orderId, Integer tradeOrderId) {
+        String threadName = Thread.currentThread().getName();
+        long updateStart = System.currentTimeMillis();
+
+        logger.info("DUPLICATE_TRACKING: Starting database update for orderId={}, tradeOrderId={}, thread={}",
+                orderId, tradeOrderId, threadName);
+
         try {
             // Acquire semaphore with timeout to prevent indefinite waiting
             if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
@@ -372,6 +488,10 @@ public class OrderService {
             try {
                 Boolean result = transactionTemplate.execute(status -> {
                     try {
+                        logger.info(
+                                "DUPLICATE_TRACKING: Inside transaction - re-loading order {} for update, thread={}",
+                                orderId, threadName);
+
                         // Re-load the order to ensure we have the latest version
                         Optional<Order> orderOpt = orderRepository.findById(orderId);
                         if (orderOpt.isEmpty()) {
@@ -381,38 +501,58 @@ public class OrderService {
 
                         Order order = orderOpt.get();
 
+                        logger.info(
+                                "DUPLICATE_TRACKING: Re-loaded order {} - status={}, existing_tradeOrderId={}, new_tradeOrderId={}, thread={}",
+                                orderId, order.getStatus().getAbbreviation(), order.getTradeOrderId(), tradeOrderId,
+                                threadName);
+
                         // CRITICAL: Check both status AND that tradeOrderId is not already set
                         // This prevents duplicate processing even if status hasn't changed yet
                         if (!"NEW".equals(order.getStatus().getAbbreviation())) {
-                            logger.warn("Order {} status changed during processing (current: {})",
-                                    orderId, order.getStatus().getAbbreviation());
+                            logger.warn(
+                                    "DUPLICATE_TRACKING: Order {} status changed during processing (current: {}), thread={} - RACE CONDITION!",
+                                    orderId, order.getStatus().getAbbreviation(), threadName);
                             return false;
                         }
 
                         if (order.getTradeOrderId() != null) {
-                            logger.warn("Order {} already has tradeOrderId {} - preventing duplicate submission",
-                                    orderId, order.getTradeOrderId());
+                            logger.warn(
+                                    "DUPLICATE_TRACKING: Order {} already has tradeOrderId {} - preventing duplicate submission, thread={} - RACE CONDITION!",
+                                    orderId, order.getTradeOrderId(), threadName);
                             return false;
                         }
 
+                        logger.info("DUPLICATE_TRACKING: Proceeding with order {} update, thread={}", orderId,
+                                threadName);
                         updateOrderAfterSubmission(order, tradeOrderId);
+                        logger.info("DUPLICATE_TRACKING: Order {} update completed successfully, thread={}", orderId,
+                                threadName);
                         return true;
 
                     } catch (org.springframework.dao.OptimisticLockingFailureException e) {
-                        logger.warn("Optimistic locking failure for order {} - another thread updated it", orderId);
+                        logger.warn(
+                                "DUPLICATE_TRACKING: Optimistic locking failure for order {} - another thread updated it, thread={}",
+                                orderId, threadName);
                         status.setRollbackOnly();
                         return false;
                     } catch (org.springframework.dao.DataIntegrityViolationException e) {
-                        logger.warn("Data integrity violation for order {} - likely duplicate key: {}", orderId,
-                                e.getMessage());
+                        logger.warn(
+                                "DUPLICATE_TRACKING: Data integrity violation for order {} - likely duplicate key: {}, thread={}",
+                                orderId, e.getMessage(), threadName);
                         status.setRollbackOnly();
                         return false;
                     } catch (Exception e) {
-                        logger.error("Failed to update order {} after submission: {}", orderId, e.getMessage(), e);
+                        logger.error("DUPLICATE_TRACKING: Failed to update order {} after submission: {}, thread={}",
+                                orderId, e.getMessage(), threadName, e);
                         status.setRollbackOnly();
                         return false;
                     }
                 });
+
+                long updateEnd = System.currentTimeMillis();
+                logger.info(
+                        "DUPLICATE_TRACKING: Database update completed for orderId={}, success={}, duration={}ms, thread={}",
+                        orderId, (result != null ? result : false), (updateEnd - updateStart), threadName);
 
                 return result != null ? result : false;
 
@@ -435,6 +575,9 @@ public class OrderService {
      * @return The trade order ID if successful, null if failed
      */
     private Integer callTradeService(Order order) {
+        String threadName = Thread.currentThread().getName();
+        long callStart = System.currentTimeMillis();
+
         try {
             TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
                     .orderId(order.getId())
@@ -445,11 +588,19 @@ public class OrderService {
                     .limitPrice(order.getLimitPrice())
                     .build();
 
-            logger.debug("Calling trade service for order {}", order.getId());
+            logger.info(
+                    "DUPLICATE_TRACKING: Sending HTTP POST to trade service for orderId={}, thread={}, timestamp={}",
+                    order.getId(), threadName, callStart);
+
             ResponseEntity<String> response = restTemplate.postForEntity(
                     "http://globeco-trade-service:8082/api/v1/tradeOrders",
                     new HttpEntity<>(tradeOrder),
                     String.class);
+
+            long callEnd = System.currentTimeMillis();
+            logger.info(
+                    "DUPLICATE_TRACKING: Trade service HTTP response received for orderId={}, status={}, duration={}ms, thread={}",
+                    order.getId(), response.getStatusCode(), (callEnd - callStart), threadName);
 
             if (response.getStatusCode() == HttpStatus.CREATED) {
                 try {
@@ -457,8 +608,9 @@ public class OrderService {
                     JsonNode node = mapper.readTree(response.getBody());
                     if (node.has("id") && node.get("id").isInt()) {
                         Integer tradeOrderId = node.get("id").asInt();
-                        logger.debug("Trade service returned tradeOrderId {} for order {}",
-                                tradeOrderId, order.getId());
+                        logger.info(
+                                "DUPLICATE_TRACKING: Trade service SUCCESS for orderId={}, returned tradeOrderId={}, thread={}",
+                                order.getId(), tradeOrderId, threadName);
                         return tradeOrderId;
                     }
                 } catch (Exception e) {
@@ -470,7 +622,10 @@ public class OrderService {
                         response.getStatusCode(), order.getId());
             }
         } catch (Exception e) {
-            logger.error("Trade service call failed for order {}: {}", order.getId(), e.getMessage());
+            long callEnd = System.currentTimeMillis();
+            logger.error(
+                    "DUPLICATE_TRACKING: Trade service call FAILED for orderId={}, duration={}ms, thread={}, error: {}",
+                    order.getId(), (callEnd - callStart), threadName, e.getMessage());
         }
 
         return null;
@@ -526,6 +681,155 @@ public class OrderService {
             }
         }
         return cachedSentStatus;
+    }
+
+    /**
+     * Update a reserved order with the actual trade order ID from the trade
+     * service.
+     * 
+     * @param orderId      The order ID to update
+     * @param tradeOrderId The actual trade order ID
+     * @return true if successful, false otherwise
+     */
+    private boolean updateReservedOrderWithTradeOrderId(Integer orderId, Integer tradeOrderId) {
+        String threadName = Thread.currentThread().getName();
+
+        try {
+            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
+                logger.warn("Database operation semaphore timeout for order {} trade ID update", orderId);
+                return false;
+            }
+
+            try {
+                Boolean result = transactionTemplate.execute(status -> {
+                    try {
+                        int updatedRows = orderRepository.updateReservedOrderWithTradeOrderId(orderId, tradeOrderId);
+                        logger.info(
+                                "DUPLICATE_TRACKING: Updated reserved order {} with tradeOrderId={}, updatedRows={}, thread={}",
+                                orderId, tradeOrderId, updatedRows, threadName);
+                        return updatedRows > 0;
+                    } catch (Exception e) {
+                        logger.error(
+                                "DUPLICATE_TRACKING: Failed to update reserved order {} with tradeOrderId={}, thread={}: {}",
+                                orderId, tradeOrderId, threadName, e.getMessage());
+                        status.setRollbackOnly();
+                        return false;
+                    }
+                });
+
+                return result != null ? result : false;
+
+            } finally {
+                databaseOperationSemaphore.release();
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for database semaphore for order {} trade ID update", orderId);
+            return false;
+        }
+    }
+
+    /**
+     * Release a reserved order back to available state if submission fails.
+     * 
+     * @param orderId The order ID to release
+     * @return true if successful, false otherwise
+     */
+    private boolean releaseOrderReservation(Integer orderId) {
+        String threadName = Thread.currentThread().getName();
+
+        try {
+            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
+                logger.warn("Database operation semaphore timeout for order {} reservation release", orderId);
+                return false;
+            }
+
+            try {
+                Boolean result = transactionTemplate.execute(status -> {
+                    try {
+                        int updatedRows = orderRepository.releaseReservedOrder(orderId);
+                        logger.info("DUPLICATE_TRACKING: Released reservation for order {}, updatedRows={}, thread={}",
+                                orderId, updatedRows, threadName);
+                        return updatedRows > 0;
+                    } catch (Exception e) {
+                        logger.error("DUPLICATE_TRACKING: Failed to release reservation for order {}, thread={}: {}",
+                                orderId, threadName, e.getMessage());
+                        status.setRollbackOnly();
+                        return false;
+                    }
+                });
+
+                return result != null ? result : false;
+
+            } finally {
+                databaseOperationSemaphore.release();
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for database semaphore for order {} reservation release", orderId);
+            return false;
+        }
+    }
+
+    /**
+     * Update order status to SENT after successful submission.
+     * 
+     * @param orderId The order ID to update
+     */
+    private void updateOrderStatusToSent(Integer orderId) {
+        String threadName = Thread.currentThread().getName();
+
+        try {
+            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
+                logger.warn("Database operation semaphore timeout for order {} status update", orderId);
+                return;
+            }
+
+            try {
+                transactionTemplate.execute(status -> {
+                    try {
+                        Optional<Order> orderOpt = orderRepository.findById(orderId);
+                        if (orderOpt.isPresent()) {
+                            Order order = orderOpt.get();
+                            Status sentStatus = getSentStatus();
+
+                            Order updatedOrder = Order.builder()
+                                    .id(order.getId())
+                                    .blotter(order.getBlotter())
+                                    .status(sentStatus)
+                                    .portfolioId(order.getPortfolioId())
+                                    .orderType(order.getOrderType())
+                                    .securityId(order.getSecurityId())
+                                    .quantity(order.getQuantity())
+                                    .limitPrice(order.getLimitPrice())
+                                    .tradeOrderId(order.getTradeOrderId())
+                                    .orderTimestamp(order.getOrderTimestamp())
+                                    .version(order.getVersion())
+                                    .build();
+
+                            orderRepository.save(updatedOrder);
+                            logger.info("DUPLICATE_TRACKING: Updated order {} status to SENT, thread={}", orderId,
+                                    threadName);
+                        }
+                        return null;
+                    } catch (Exception e) {
+                        logger.error("DUPLICATE_TRACKING: Failed to update order {} status to SENT, thread={}: {}",
+                                orderId, threadName, e.getMessage());
+                        status.setRollbackOnly();
+                        return null;
+                    }
+                });
+
+            } finally {
+                databaseOperationSemaphore.release();
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for database semaphore for order {} status update", orderId);
+        }
     }
 
     // Complete mapping from Order to OrderWithDetailsDTO
