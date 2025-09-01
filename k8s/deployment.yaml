@@ -50,16 +50,16 @@ spec:
             - name: LOGGING_LEVEL_ORG_KASBENCH_GLOBECO_ORDER_SERVICE
               value: "INFO"
             - name: LOGGING_LEVEL_ORG_KASBENCH_GLOBECO_ORDER_SERVICE_SERVICE
-              value: "INFO"
+              value: "DEBUG"
             - name: LOGGING_LEVEL_ORG_KASBENCH_GLOBECO_ORDER_SERVICE_CONTROLLER
               value: "INFO"
           resources:
             requests:
-              cpu: "500m"
-              memory: "100Mi"
+              cpu: "1000m"
+              memory: "2000Mi"
             limits:
-              cpu: "500m"
-              memory: "1000Mi"
+              cpu: "1000m"
+              memory: "2000Mi"
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
