@@ -15,7 +15,7 @@
   - Write unit tests for order validation and batch loading logic
   - _Requirements: 6.2, 6.3, 4.1_
 
-- [ ] 3. Implement bulk request building functionality
+- [x] 3. Implement bulk request building functionality
   - Create `buildBulkTradeOrderRequest()` method to convert Order entities to trade service format
   - Map order fields to TradeOrderPostDTO format (orderId, portfolioId, orderType, etc.)
   - Handle timestamp formatting and blotter ID mapping

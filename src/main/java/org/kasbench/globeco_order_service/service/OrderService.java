@@ -13,6 +13,7 @@ import org.kasbench.globeco_order_service.dto.OrderPostResponseDTO;
 import org.kasbench.globeco_order_service.dto.BatchSubmitRequestDTO;
 import org.kasbench.globeco_order_service.dto.BatchSubmitResponseDTO;
 import org.kasbench.globeco_order_service.dto.OrderSubmitResultDTO;
+import org.kasbench.globeco_order_service.dto.BulkTradeOrderRequestDTO;
 import org.kasbench.globeco_order_service.repository.OrderRepository;
 import org.kasbench.globeco_order_service.repository.StatusRepository;
 import org.kasbench.globeco_order_service.repository.BlotterRepository;
@@ -1575,5 +1576,97 @@ public class OrderService {
         }
 
         return null; // Valid
+    }
+
+    /**
+     * Build a bulk trade order request from a list of Order entities.
+     * Maps order fields to TradeOrderPostDTO format and validates required fields.
+     * 
+     * @param orders List of Order entities to convert
+     * @return BulkTradeOrderRequestDTO containing the mapped trade orders
+     * @throws IllegalArgumentException if any order is missing required fields
+     */
+    public BulkTradeOrderRequestDTO buildBulkTradeOrderRequest(List<Order> orders) {
+        if (orders == null || orders.isEmpty()) {
+            throw new IllegalArgumentException("Orders list cannot be null or empty");
+        }
+
+        logger.info("Building bulk trade order request for {} orders", orders.size());
+
+        List<TradeOrderPostDTO> tradeOrders = new ArrayList<>();
+        
+        for (Order order : orders) {
+            // Validate required fields before building request
+            validateOrderForBulkSubmission(order);
+            
+            // Map Order entity to TradeOrderPostDTO
+            TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
+                    .orderId(order.getId())
+                    .portfolioId(order.getPortfolioId())
+                    .orderType(order.getOrderType().getAbbreviation())
+                    .securityId(order.getSecurityId())
+                    .quantity(order.getQuantity())
+                    .limitPrice(order.getLimitPrice())
+                    .tradeTimestamp(order.getOrderTimestamp()) // Use order timestamp as trade timestamp
+                    .blotterId(order.getBlotter() != null ? order.getBlotter().getId() : null)
+                    .build();
+            
+            tradeOrders.add(tradeOrder);
+            
+            logger.debug("Mapped order {} to trade order: portfolioId={}, orderType={}, securityId={}, quantity={}, limitPrice={}, blotterId={}",
+                    order.getId(), tradeOrder.getPortfolioId(), tradeOrder.getOrderType(), 
+                    tradeOrder.getSecurityId(), tradeOrder.getQuantity(), tradeOrder.getLimitPrice(), tradeOrder.getBlotterId());
+        }
+
+        BulkTradeOrderRequestDTO bulkRequest = BulkTradeOrderRequestDTO.of(tradeOrders);
+        
+        logger.info("Successfully built bulk trade order request with {} trade orders", bulkRequest.getOrderCount());
+        
+        return bulkRequest;
+    }
+
+    /**
+     * Validate that an order has all required fields for bulk submission to the trade service.
+     * 
+     * @param order The order to validate
+     * @throws IllegalArgumentException if any required field is missing or invalid
+     */
+    private void validateOrderForBulkSubmission(Order order) {
+        if (order == null) {
+            throw new IllegalArgumentException("Order cannot be null");
+        }
+
+        if (order.getId() == null) {
+            throw new IllegalArgumentException("Order ID is required");
+        }
+
+        if (order.getPortfolioId() == null || order.getPortfolioId().trim().isEmpty()) {
+            throw new IllegalArgumentException("Portfolio ID is required for order " + order.getId());
+        }
+
+        if (order.getOrderType() == null || order.getOrderType().getAbbreviation() == null || 
+            order.getOrderType().getAbbreviation().trim().isEmpty()) {
+            throw new IllegalArgumentException("Order type is required for order " + order.getId());
+        }
+
+        if (order.getSecurityId() == null || order.getSecurityId().trim().isEmpty()) {
+            throw new IllegalArgumentException("Security ID is required for order " + order.getId());
+        }
+
+        if (order.getQuantity() == null || order.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Quantity must be positive for order " + order.getId());
+        }
+
+        if (order.getLimitPrice() == null || order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Limit price must be positive for order " + order.getId());
+        }
+
+        if (order.getOrderTimestamp() == null) {
+            throw new IllegalArgumentException("Order timestamp is required for order " + order.getId());
+        }
+
+        // Note: blotterId is optional in the trade service API, so we don't validate it as required
+        
+        logger.debug("Order {} passed validation for bulk submission", order.getId());
     }
 }

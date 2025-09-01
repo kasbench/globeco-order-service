@@ -320,6 +320,38 @@ public class OrderServiceBulkSubmissionTest {
                 .build();
     }
     
+    // =============== BULK REQUEST BUILDING TESTS ===============
+    
+    @Test
+    void testBuildBulkTradeOrderRequest_Integration() {
+        // Create a list of valid orders
+        List<Order> orders = Arrays.asList(
+                createValidOrderForBulkSubmission(1),
+                createValidOrderForBulkSubmission(2)
+        );
+        
+        // Execute the method
+        org.kasbench.globeco_order_service.dto.BulkTradeOrderRequestDTO result = 
+                orderService.buildBulkTradeOrderRequest(orders);
+        
+        // Verify the result
+        assertNotNull(result);
+        assertEquals(2, result.getOrderCount());
+        assertNotNull(result.getTradeOrders());
+        assertEquals(2, result.getTradeOrders().size());
+        
+        // Verify first order mapping
+        org.kasbench.globeco_order_service.dto.TradeOrderPostDTO firstOrder = result.getTradeOrders().get(0);
+        assertEquals(Integer.valueOf(1), firstOrder.getOrderId());
+        assertEquals("PORTFOLIO_001", firstOrder.getPortfolioId());
+        assertEquals("BUY", firstOrder.getOrderType());
+        assertEquals("SECURITY_001", firstOrder.getSecurityId());
+        assertEquals(new BigDecimal("100.00"), firstOrder.getQuantity());
+        assertEquals(new BigDecimal("50.25"), firstOrder.getLimitPrice());
+        assertEquals(Integer.valueOf(3), firstOrder.getBlotterId());
+        assertNotNull(firstOrder.getTradeTimestamp());
+    }
+
     // Helper method to invoke private hasRequiredFieldsForTradeService method using reflection
     private boolean invokeHasRequiredFieldsForTradeService(Order order) {
         try {
