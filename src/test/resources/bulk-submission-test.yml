@@ -1,0 +1,38 @@
+# Test configuration for bulk submission functionality
+bulk:
+  submission:
+    enabled: true
+    trade-service:
+      timeout-ms: 40000
+      max-batch-size: 80
+      connection-timeout-ms: 8000
+      read-timeout-ms: 40000
+      max-retries: 1
+      retry-delay-ms: 2000
+      exponential-backoff: false
+    fallback:
+      enabled: true
+      max-individual-orders: 8
+      individual-timeout-ms: 25000
+      auto-fallback-on-errors: false
+      fallback-trigger-status-codes: [503, 502]
+    monitoring:
+      performance-monitoring-enabled: false
+      success-rate-monitoring-enabled: true
+      success-rate-threshold: 0.85
+      success-rate-window-minutes: 10
+      latency-monitoring-enabled: false
+      max-acceptable-latency-ms: 25000
+      error-rate-monitoring-enabled: true
+      max-error-rate: 0.10
+      detailed-logging-enabled: false
+      log-performance-metrics: false
+    performance:
+      db-pool-optimization-enabled: false
+      max-db-connections: 3
+      batch-db-updates-enabled: false
+      db-update-batch-size: 25
+      async-processing-enabled: false
+      async-thread-pool-size: 2
+      memory-optimization-enabled: false
+      max-memory-usage-mb: 128

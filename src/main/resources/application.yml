@@ -40,6 +40,45 @@ metrics:
   debug:
     enabled: true  # Enable debug metrics endpoint for validation
 
+# Bulk Submission Configuration
+bulk:
+  submission:
+    enabled: true
+    trade-service:
+      timeout-ms: 60000
+      max-batch-size: 100
+      connection-timeout-ms: 10000
+      read-timeout-ms: 60000
+      max-retries: 2
+      retry-delay-ms: 1000
+      exponential-backoff: true
+    fallback:
+      enabled: false
+      max-individual-orders: 10
+      individual-timeout-ms: 30000
+      auto-fallback-on-errors: true
+      fallback-trigger-status-codes: [503, 429, 502, 504]
+    monitoring:
+      performance-monitoring-enabled: true
+      success-rate-monitoring-enabled: true
+      success-rate-threshold: 0.95
+      success-rate-window-minutes: 15
+      latency-monitoring-enabled: true
+      max-acceptable-latency-ms: 30000
+      error-rate-monitoring-enabled: true
+      max-error-rate: 0.05
+      detailed-logging-enabled: true
+      log-performance-metrics: true
+    performance:
+      db-pool-optimization-enabled: true
+      max-db-connections: 5
+      batch-db-updates-enabled: true
+      db-update-batch-size: 50
+      async-processing-enabled: true
+      async-thread-pool-size: 3
+      memory-optimization-enabled: true
+      max-memory-usage-mb: 256
+
 # Logging Configuration
 logging:
   level:

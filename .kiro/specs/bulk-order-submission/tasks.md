@@ -68,7 +68,7 @@
   - Write unit tests for error handling scenarios and logging behavior
   - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-- [ ] 9. Update validation and maintain API contract
+- [X] 9. Update validation and maintain API contract
   - Ensure existing batch size limits (100 orders) are maintained
   - Preserve existing request validation in OrderController
   - Maintain existing HTTP status code behavior (200, 207, 400, 413, 500)
@@ -77,7 +77,7 @@
   - Write integration tests to verify API contract compliance
   - _Requirements: 3.1, 3.4, 6.1, 6.4_
 
-- [ ] 10. Add configuration and feature management
+- [x] 10. Add configuration and feature management
   - Add application properties for bulk submission configuration
   - Implement feature flag for enabling/disabling bulk submission
   - Add timeout configuration for trade service bulk calls
