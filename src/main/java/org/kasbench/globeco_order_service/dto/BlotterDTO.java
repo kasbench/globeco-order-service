@@ -11,6 +11,7 @@ import lombok.Builder;
 @Builder
 public class BlotterDTO {
     private Integer id;
+    private String abbreviation;
     private String name;
     private Integer version;
 } 

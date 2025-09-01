@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Create DTOs for trade service bulk integration
+- [x] 1. Create DTOs for trade service bulk integration
   - Create `BulkTradeOrderRequestDTO` class to match trade service API specification
   - Create `BulkTradeOrderResponseDTO` class to handle trade service bulk responses
   - Create `TradeOrderResultDTO` class for individual order results within bulk response
