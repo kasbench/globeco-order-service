@@ -15,6 +15,7 @@ import org.kasbench.globeco_order_service.dto.BatchSubmitResponseDTO;
 import org.kasbench.globeco_order_service.dto.OrderSubmitResultDTO;
 import org.kasbench.globeco_order_service.dto.BulkTradeOrderRequestDTO;
 import org.kasbench.globeco_order_service.dto.BulkTradeOrderResponseDTO;
+import org.kasbench.globeco_order_service.dto.TradeOrderResultDTO;
 import org.kasbench.globeco_order_service.repository.OrderRepository;
 import org.kasbench.globeco_order_service.repository.StatusRepository;
 import org.kasbench.globeco_order_service.repository.BlotterRepository;
@@ -1799,5 +1800,102 @@ public class OrderService {
                     bulkRequest.getOrderCount(), (callEnd - callStart), errorMsg, threadName, e);
             throw new RuntimeException(errorMsg, e);
         }
+    }
+
+    /**
+     * Transform bulk trade service response to order service format.
+     * Maps BulkTradeOrderResponseDTO to BatchSubmitResponseDTO format while preserving
+     * request index mapping and extracting trade order IDs for successful responses.
+     * 
+     * @param bulkResponse The bulk response from the trade service
+     * @param originalOrderIds The original order IDs in request order for correlation
+     * @return BatchSubmitResponseDTO in the expected order service format
+     * @throws IllegalArgumentException if bulkResponse is null or originalOrderIds is null/empty
+     */
+    public BatchSubmitResponseDTO transformBulkResponseToOrderServiceFormat(
+            BulkTradeOrderResponseDTO bulkResponse, List<Integer> originalOrderIds) {
+        
+        if (bulkResponse == null) {
+            throw new IllegalArgumentException("Bulk response cannot be null");
+        }
+        
+        if (originalOrderIds == null || originalOrderIds.isEmpty()) {
+            throw new IllegalArgumentException("Original order IDs cannot be null or empty");
+        }
+        
+        logger.info("Transforming bulk response to order service format: status={}, totalRequested={}, successful={}, failed={}", 
+                bulkResponse.getStatus(), bulkResponse.getTotalRequested(), 
+                bulkResponse.getSuccessful(), bulkResponse.getFailed());
+        
+        // Create a map of request index to trade order result for efficient lookup
+        Map<Integer, TradeOrderResultDTO> resultsByIndex = new HashMap<>();
+        if (bulkResponse.getResults() != null) {
+            for (TradeOrderResultDTO result : bulkResponse.getResults()) {
+                if (result.getRequestIndex() != null) {
+                    resultsByIndex.put(result.getRequestIndex(), result);
+                }
+            }
+        }
+        
+        // Transform each original order to OrderSubmitResultDTO
+        List<OrderSubmitResultDTO> orderResults = new ArrayList<>();
+        for (int i = 0; i < originalOrderIds.size(); i++) {
+            Integer orderId = originalOrderIds.get(i);
+            TradeOrderResultDTO tradeResult = resultsByIndex.get(i);
+            
+            OrderSubmitResultDTO orderResult;
+            if (tradeResult != null) {
+                // Transform trade service result to order service result
+                if (tradeResult.isSuccess()) {
+                    Integer tradeOrderId = tradeResult.getTradeOrderId();
+                    orderResult = OrderSubmitResultDTO.success(orderId, tradeOrderId, i);
+                    logger.debug("Order {} succeeded with trade order ID {}", orderId, tradeOrderId);
+                } else {
+                    orderResult = OrderSubmitResultDTO.failure(orderId, tradeResult.getMessage(), i);
+                    logger.debug("Order {} failed: {}", orderId, tradeResult.getMessage());
+                }
+            } else {
+                // No result found for this index - treat as failure
+                String errorMessage = "No result returned from trade service for this order";
+                orderResult = OrderSubmitResultDTO.failure(orderId, errorMessage, i);
+                logger.warn("No trade service result found for order {} at index {}", orderId, i);
+            }
+            
+            orderResults.add(orderResult);
+        }
+        
+        // Determine overall status based on trade service response
+        String overallStatus;
+        String overallMessage;
+        
+        if (bulkResponse.isCompleteSuccess()) {
+            overallStatus = "SUCCESS";
+            overallMessage = String.format("All %d orders submitted successfully", originalOrderIds.size());
+        } else if (bulkResponse.isCompleteFailure()) {
+            overallStatus = "FAILURE";
+            overallMessage = bulkResponse.getMessage() != null ? bulkResponse.getMessage() : 
+                    String.format("All %d orders failed to submit", originalOrderIds.size());
+        } else {
+            // Partial success or mixed results
+            overallStatus = "PARTIAL";
+            int successful = bulkResponse.getSuccessful() != null ? bulkResponse.getSuccessful() : 0;
+            int failed = bulkResponse.getFailed() != null ? bulkResponse.getFailed() : 0;
+            overallMessage = String.format("%d of %d orders submitted successfully, %d failed", 
+                    successful, originalOrderIds.size(), failed);
+        }
+        
+        BatchSubmitResponseDTO response = BatchSubmitResponseDTO.builder()
+                .status(overallStatus)
+                .message(overallMessage)
+                .totalRequested(originalOrderIds.size())
+                .successful(bulkResponse.getSuccessful() != null ? bulkResponse.getSuccessful() : 0)
+                .failed(bulkResponse.getFailed() != null ? bulkResponse.getFailed() : 0)
+                .results(orderResults)
+                .build();
+        
+        logger.info("Successfully transformed bulk response: status={}, successful={}, failed={}, totalResults={}", 
+                response.getStatus(), response.getSuccessful(), response.getFailed(), response.getResults().size());
+        
+        return response;
     }
 }
