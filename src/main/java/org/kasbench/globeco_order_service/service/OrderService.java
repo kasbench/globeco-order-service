@@ -159,49 +159,134 @@ public class OrderService {
      * @return BatchSubmitResponseDTO containing results for each order
      */
     public BatchSubmitResponseDTO submitOrdersBatch(List<Integer> orderIds) {
-        logger.info("Starting bulk order submission for {} orders", orderIds.size());
-
-        // Validate batch size
-        if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
-            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d",
-                    orderIds.size(), MAX_SUBMIT_BATCH_SIZE);
-            logger.warn("Batch submission rejected: {}", errorMessage);
-            return BatchSubmitResponseDTO.validationFailure(errorMessage);
+        long overallStartTime = System.currentTimeMillis();
+        String threadName = Thread.currentThread().getName();
+        
+        // Validate input parameters first
+        if (orderIds == null) {
+            logger.error("BULK_SUBMISSION: Order IDs list is null, thread={}", threadName);
+            return BatchSubmitResponseDTO.validationFailure("Order IDs cannot be null");
         }
+        
+        logger.info("BULK_SUBMISSION: Starting bulk order submission for {} orders, thread={}, timestamp={}",
+                orderIds.size(), threadName, overallStartTime);
 
         if (orderIds.isEmpty()) {
-            logger.warn("Empty order list provided for bulk submission");
+            logger.warn("BULK_SUBMISSION: Empty order list provided, thread={}", threadName);
             return BatchSubmitResponseDTO.validationFailure("No orders provided for submission");
         }
 
+        // Validate batch size with detailed logging
+        if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
+            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d",
+                    orderIds.size(), MAX_SUBMIT_BATCH_SIZE);
+            logger.warn("BULK_SUBMISSION: Batch size validation failed - {}, thread={}", errorMessage, threadName);
+            return BatchSubmitResponseDTO.validationFailure(errorMessage);
+        }
+
+        // Log performance baseline
+        logger.info("BULK_SUBMISSION_PERFORMANCE: Processing {} orders (limit: {}), thread={}",
+                orderIds.size(), MAX_SUBMIT_BATCH_SIZE, threadName);
+
         try {
             // 1. Load and validate orders in batch
+            long loadStartTime = System.currentTimeMillis();
+            logger.debug("BULK_SUBMISSION: Step 1 - Loading and validating orders, thread={}", threadName);
+            
             List<Order> validOrders = loadAndValidateOrdersForBulkSubmission(orderIds);
             
+            long loadDuration = System.currentTimeMillis() - loadStartTime;
+            logger.info("BULK_SUBMISSION_PERFORMANCE: Order loading completed in {}ms - {} valid out of {} requested, thread={}",
+                    loadDuration, validOrders.size(), orderIds.size(), threadName);
+            
             if (validOrders.isEmpty()) {
-                logger.warn("No valid orders found for bulk submission from {} requested orders", orderIds.size());
+                logger.warn("BULK_SUBMISSION: No valid orders found from {} requested orders, thread={}",
+                        orderIds.size(), threadName);
                 return BatchSubmitResponseDTO.validationFailure("No valid orders found for submission");
             }
 
+            // Log validation results
+            int invalidCount = orderIds.size() - validOrders.size();
+            if (invalidCount > 0) {
+                logger.warn("BULK_SUBMISSION: {} orders were invalid and excluded from bulk submission, thread={}",
+                        invalidCount, threadName);
+            }
+
             // 2. Build bulk request
+            long buildStartTime = System.currentTimeMillis();
+            logger.debug("BULK_SUBMISSION: Step 2 - Building bulk request for {} valid orders, thread={}",
+                    validOrders.size(), threadName);
+            
             BulkTradeOrderRequestDTO bulkRequest = buildBulkTradeOrderRequest(validOrders);
+            
+            long buildDuration = System.currentTimeMillis() - buildStartTime;
+            logger.info("BULK_SUBMISSION_PERFORMANCE: Bulk request building completed in {}ms, thread={}",
+                    buildDuration, threadName);
 
             // 3. Call trade service bulk endpoint
+            long tradeServiceStartTime = System.currentTimeMillis();
+            logger.debug("BULK_SUBMISSION: Step 3 - Calling trade service bulk endpoint, thread={}", threadName);
+            
             BulkTradeOrderResponseDTO tradeServiceResponse = callTradeServiceBulk(bulkRequest);
+            
+            long tradeServiceDuration = System.currentTimeMillis() - tradeServiceStartTime;
+            logger.info("BULK_SUBMISSION_PERFORMANCE: Trade service call completed in {}ms - {} successful, {} failed, thread={}",
+                    tradeServiceDuration, tradeServiceResponse.getSuccessful(), tradeServiceResponse.getFailed(), threadName);
 
             // 4. Update order statuses in batch
+            long updateStartTime = System.currentTimeMillis();
+            logger.debug("BULK_SUBMISSION: Step 4 - Updating order statuses from bulk response, thread={}", threadName);
+            
             updateOrderStatusesFromBulkResponse(validOrders, tradeServiceResponse);
+            
+            long updateDuration = System.currentTimeMillis() - updateStartTime;
+            logger.info("BULK_SUBMISSION_PERFORMANCE: Status update completed in {}ms, thread={}",
+                    updateDuration, threadName);
 
             // 5. Transform response to match existing API contract
+            long transformStartTime = System.currentTimeMillis();
+            logger.debug("BULK_SUBMISSION: Step 5 - Transforming response to order service format, thread={}", threadName);
+            
             BatchSubmitResponseDTO response = transformBulkResponseToOrderServiceFormat(tradeServiceResponse, orderIds);
+            
+            long transformDuration = System.currentTimeMillis() - transformStartTime;
+            logger.info("BULK_SUBMISSION_PERFORMANCE: Response transformation completed in {}ms, thread={}",
+                    transformDuration, threadName);
 
-            logger.info("Bulk submission completed: {} successful, {} failed out of {} total",
-                    response.getSuccessful(), response.getFailed(), response.getTotalRequested());
+            // Log comprehensive completion metrics
+            long overallDuration = System.currentTimeMillis() - overallStartTime;
+            double successRate = response.getTotalRequested() > 0 ? 
+                    (double) response.getSuccessful() / response.getTotalRequested() * 100 : 0;
+            
+            logger.info("BULK_SUBMISSION: Completed successfully in {}ms - {} successful, {} failed out of {} total (success_rate: {:.2f}%), thread={}",
+                    overallDuration, response.getSuccessful(), response.getFailed(), response.getTotalRequested(),
+                    successRate, threadName);
+
+            // Log detailed performance breakdown
+            logger.info("BULK_SUBMISSION_PERFORMANCE_BREAKDOWN: load={}ms, build={}ms, trade_service={}ms, update={}ms, transform={}ms, total={}ms, thread={}",
+                    loadDuration, buildDuration, tradeServiceDuration, updateDuration, transformDuration, overallDuration, threadName);
+
+            // Log performance per order metrics
+            if (response.getSuccessful() > 0) {
+                double avgTimePerOrder = (double) overallDuration / response.getSuccessful();
+                logger.info("BULK_SUBMISSION_PERFORMANCE: Average processing time per successful order: {:.2f}ms, thread={}",
+                        avgTimePerOrder, threadName);
+            }
 
             return response;
 
-        } catch (Exception e) {
-            logger.error("Bulk submission failed for {} orders: {}", orderIds.size(), e.getMessage(), e);
+        } catch (IllegalArgumentException e) {
+            long overallDuration = System.currentTimeMillis() - overallStartTime;
+            logger.error("BULK_SUBMISSION: Validation error after {}ms for {} orders, thread={}, error={}",
+                    overallDuration, orderIds.size(), threadName, e.getMessage());
+            
+            return BatchSubmitResponseDTO.validationFailure(e.getMessage());
+
+        } catch (RuntimeException e) {
+            long overallDuration = System.currentTimeMillis() - overallStartTime;
+            logger.error("BULK_SUBMISSION: Runtime error after {}ms for {} orders, thread={}, error={}",
+                    overallDuration, orderIds.size(), threadName, e.getMessage(), e);
+            
             return BatchSubmitResponseDTO.builder()
                     .status("FAILURE")
                     .message("Bulk submission failed: " + e.getMessage())
@@ -211,6 +296,24 @@ public class OrderService {
                     .results(orderIds.stream()
                             .map(orderId -> OrderSubmitResultDTO.failure(orderId, 
                                     "Bulk submission failed: " + e.getMessage(), 
+                                    orderIds.indexOf(orderId)))
+                            .toList())
+                    .build();
+
+        } catch (Exception e) {
+            long overallDuration = System.currentTimeMillis() - overallStartTime;
+            logger.error("BULK_SUBMISSION: Unexpected error after {}ms for {} orders, thread={}, error={}",
+                    overallDuration, orderIds.size(), threadName, e.getMessage(), e);
+            
+            return BatchSubmitResponseDTO.builder()
+                    .status("FAILURE")
+                    .message("Unexpected error during bulk submission: " + e.getMessage())
+                    .totalRequested(orderIds.size())
+                    .successful(0)
+                    .failed(orderIds.size())
+                    .results(orderIds.stream()
+                            .map(orderId -> OrderSubmitResultDTO.failure(orderId, 
+                                    "Unexpected error: " + e.getMessage(), 
                                     orderIds.indexOf(orderId)))
                             .toList())
                     .build();
@@ -356,36 +459,128 @@ public class OrderService {
      * @return List of valid orders ready for bulk submission
      */
     public List<Order> loadAndValidateOrdersForBulkSubmission(List<Integer> orderIds) {
+        long startTime = System.currentTimeMillis();
+        String threadName = Thread.currentThread().getName();
+        
         if (orderIds == null || orderIds.isEmpty()) {
-            logger.warn("Empty or null order IDs list provided for bulk submission");
+            logger.warn("BULK_VALIDATION: Empty or null order IDs list provided, thread={}", threadName);
             return new ArrayList<>();
         }
         
-        logger.info("Loading and validating {} orders for bulk submission", orderIds.size());
+        logger.info("BULK_VALIDATION: Loading and validating {} orders for bulk submission, thread={}, timestamp={}",
+                orderIds.size(), threadName, startTime);
 
         return readOnlyTransactionTemplate.execute(status -> {
             try {
                 // Batch load all orders using findAllById for efficiency
+                long dbStartTime = System.currentTimeMillis();
                 List<Order> allOrders = orderRepository.findAllById(orderIds);
-                logger.debug("Loaded {} orders from database out of {} requested", 
-                        allOrders.size(), orderIds.size());
+                long dbDuration = System.currentTimeMillis() - dbStartTime;
+                
+                logger.info("BULK_VALIDATION: Loaded {} orders from database out of {} requested in {}ms, thread={}",
+                        allOrders.size(), orderIds.size(), dbDuration, threadName);
 
-                // Filter orders for bulk submission eligibility
-                List<Order> validOrders = allOrders.stream()
-                        .filter(this::isOrderValidForBulkSubmission)
-                        .toList();
+                // Track missing orders for detailed logging
+                if (allOrders.size() < orderIds.size()) {
+                    Set<Integer> foundIds = allOrders.stream()
+                            .map(Order::getId)
+                            .collect(HashSet::new, Set::add, Set::addAll);
+                    
+                    List<Integer> missingIds = orderIds.stream()
+                            .filter(id -> !foundIds.contains(id))
+                            .toList();
+                    
+                    logger.warn("BULK_VALIDATION: {} orders not found in database: {}, thread={}",
+                            missingIds.size(), missingIds, threadName);
+                }
 
-                logger.info("Validated {} orders out of {} loaded for bulk submission", 
-                        validOrders.size(), allOrders.size());
+                // Filter orders for bulk submission eligibility with detailed tracking
+                long validationStartTime = System.currentTimeMillis();
+                List<Order> validOrders = new ArrayList<>();
+                List<String> validationErrors = new ArrayList<>();
+                
+                for (Order order : allOrders) {
+                    try {
+                        if (isOrderValidForBulkSubmission(order)) {
+                            validOrders.add(order);
+                            logger.debug("BULK_VALIDATION: Order {} is valid for bulk submission, thread={}",
+                                    order.getId(), threadName);
+                        } else {
+                            String reason = getOrderValidationFailureReason(order);
+                            validationErrors.add(String.format("Order %s: %s", order.getId(), reason));
+                            logger.debug("BULK_VALIDATION: Order {} is invalid for bulk submission: {}, thread={}",
+                                    order.getId(), reason, threadName);
+                        }
+                    } catch (Exception e) {
+                        String errorMsg = String.format("Order %s: validation error - %s", 
+                                order != null ? order.getId() : "null", e.getMessage());
+                        validationErrors.add(errorMsg);
+                        logger.error("BULK_VALIDATION: Error validating order {}, thread={}, error={}",
+                                order != null ? order.getId() : "null", threadName, e.getMessage(), e);
+                    }
+                }
+                
+                long validationDuration = System.currentTimeMillis() - validationStartTime;
+                long totalDuration = System.currentTimeMillis() - startTime;
+                
+                logger.info("BULK_VALIDATION: Validated {} orders out of {} loaded in {}ms (total: {}ms), thread={}",
+                        validOrders.size(), allOrders.size(), validationDuration, totalDuration, threadName);
+
+                // Log validation errors for monitoring
+                if (!validationErrors.isEmpty()) {
+                    logger.warn("BULK_VALIDATION: {} validation errors encountered, thread={}", 
+                            validationErrors.size(), threadName);
+                    for (String error : validationErrors) {
+                        logger.debug("BULK_VALIDATION: Validation error: {}, thread={}", error, threadName);
+                    }
+                }
+
+                // Log performance metrics
+                if (allOrders.size() > 0) {
+                    double avgValidationTimePerOrder = (double) validationDuration / allOrders.size();
+                    logger.info("BULK_VALIDATION_PERFORMANCE: Validated {} orders in {}ms (avg {:.2f}ms per order), success_rate={:.2f}%, thread={}",
+                            allOrders.size(), validationDuration, avgValidationTimePerOrder,
+                            (double) validOrders.size() / allOrders.size() * 100, threadName);
+                }
 
                 return validOrders;
 
             } catch (Exception e) {
-                logger.error("Failed to load and validate orders for bulk submission: {}", e.getMessage(), e);
+                long totalDuration = System.currentTimeMillis() - startTime;
+                logger.error("BULK_VALIDATION: Failed to load and validate orders after {}ms, thread={}, error={}",
+                        totalDuration, threadName, e.getMessage(), e);
                 status.setRollbackOnly();
-                return new ArrayList<>();
+                throw new RuntimeException("Failed to load and validate orders for bulk submission", e);
             }
         });
+    }
+
+    /**
+     * Get detailed reason why an order failed validation for bulk submission.
+     * Used for comprehensive error logging and debugging.
+     * 
+     * @param order The order that failed validation
+     * @return String describing the validation failure reason
+     */
+    private String getOrderValidationFailureReason(Order order) {
+        if (order == null) {
+            return "Order is null";
+        }
+
+        if (order.getStatus() == null || !"NEW".equals(order.getStatus().getAbbreviation())) {
+            return String.format("Invalid status '%s' (must be 'NEW')", 
+                    order.getStatus() != null ? order.getStatus().getAbbreviation() : "null");
+        }
+
+        if (order.getTradeOrderId() != null) {
+            return String.format("Already processed (tradeOrderId: %s)", order.getTradeOrderId());
+        }
+
+        if (!hasRequiredFieldsForTradeService(order)) {
+            return "Missing required fields for trade service";
+        }
+
+        return "Unknown validation failure";
     }
 
     /**
@@ -486,6 +681,343 @@ public class OrderService {
 
 
     /**
+     * Build bulk trade order request from a list of validated orders.
+     * Converts Order entities to the trade service bulk API format with comprehensive validation.
+     * 
+     * @param orders List of validated orders to include in the bulk request
+     * @return BulkTradeOrderRequestDTO formatted for the trade service bulk API
+     * @throws IllegalArgumentException if orders list is null, empty, or contains invalid orders
+     */
+    public BulkTradeOrderRequestDTO buildBulkTradeOrderRequest(List<Order> orders) {
+        long startTime = System.currentTimeMillis();
+        
+        if (orders == null || orders.isEmpty()) {
+            logger.error("Cannot build bulk request: orders list is null or empty");
+            throw new IllegalArgumentException("Orders list cannot be null or empty");
+        }
+
+        logger.info("Building bulk trade order request for {} orders", orders.size());
+
+        try {
+            List<TradeOrderPostDTO> tradeOrders = new ArrayList<>();
+            
+            for (Order order : orders) {
+                validateOrderForBulkRequest(order);
+                
+                TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
+                        .orderId(order.getId())
+                        .portfolioId(order.getPortfolioId())
+                        .orderType(order.getOrderType().getAbbreviation())
+                        .securityId(order.getSecurityId())
+                        .quantity(order.getQuantity())
+                        .limitPrice(order.getLimitPrice())
+                        .tradeTimestamp(order.getOrderTimestamp())
+                        .blotterId(order.getBlotter() != null ? order.getBlotter().getId() : null)
+                        .build();
+                
+                tradeOrders.add(tradeOrder);
+                logger.debug("Added order {} to bulk request: portfolioId={}, orderType={}, securityId={}, quantity={}, limitPrice={}",
+                        order.getId(), order.getPortfolioId(), order.getOrderType().getAbbreviation(),
+                        order.getSecurityId(), order.getQuantity(), order.getLimitPrice());
+            }
+
+            BulkTradeOrderRequestDTO bulkRequest = BulkTradeOrderRequestDTO.of(tradeOrders);
+            
+            long duration = System.currentTimeMillis() - startTime;
+            logger.info("Successfully built bulk request with {} orders in {}ms", orders.size(), duration);
+            
+            return bulkRequest;
+
+        } catch (Exception e) {
+            long duration = System.currentTimeMillis() - startTime;
+            logger.error("Failed to build bulk trade order request for {} orders after {}ms: {}", 
+                    orders.size(), duration, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * Validate an order for inclusion in a bulk request.
+     * Performs comprehensive validation of all required fields.
+     * 
+     * @param order The order to validate
+     * @throws IllegalArgumentException if the order is invalid for bulk submission
+     */
+    private void validateOrderForBulkRequest(Order order) {
+        if (order == null) {
+            throw new IllegalArgumentException("Order cannot be null");
+        }
+
+        if (order.getId() == null) {
+            throw new IllegalArgumentException("Order ID is required");
+        }
+
+        if (order.getPortfolioId() == null || order.getPortfolioId().trim().isEmpty()) {
+            throw new IllegalArgumentException("Portfolio ID is required for order " + order.getId());
+        }
+
+        if (order.getOrderType() == null || order.getOrderType().getAbbreviation() == null || 
+            order.getOrderType().getAbbreviation().trim().isEmpty()) {
+            throw new IllegalArgumentException("Order type is required for order " + order.getId());
+        }
+
+        if (order.getSecurityId() == null || order.getSecurityId().trim().isEmpty()) {
+            throw new IllegalArgumentException("Security ID is required for order " + order.getId());
+        }
+
+        if (order.getQuantity() == null || order.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Quantity must be positive for order " + order.getId());
+        }
+
+        if (order.getLimitPrice() == null || order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Limit price must be positive for order " + order.getId());
+        }
+
+        if (order.getOrderTimestamp() == null) {
+            throw new IllegalArgumentException("Order timestamp is required for order " + order.getId());
+        }
+    }
+
+    /**
+     * Call the trade service bulk endpoint with comprehensive error handling and logging.
+     * Handles various error scenarios including HTTP errors, network issues, and service failures.
+     * 
+     * @param bulkRequest The bulk request to send to the trade service
+     * @return BulkTradeOrderResponseDTO response from the trade service
+     * @throws IllegalArgumentException if the bulk request is null or empty
+     * @throws RuntimeException for various trade service errors with detailed error information
+     */
+    public BulkTradeOrderResponseDTO callTradeServiceBulk(BulkTradeOrderRequestDTO bulkRequest) {
+        long startTime = System.currentTimeMillis();
+        String threadName = Thread.currentThread().getName();
+        
+        // Validate input
+        if (bulkRequest == null || bulkRequest.getTradeOrders() == null || bulkRequest.getTradeOrders().isEmpty()) {
+            logger.error("Cannot call trade service: bulk request is null or empty");
+            throw new IllegalArgumentException("Bulk request cannot be null or empty");
+        }
+
+        int orderCount = bulkRequest.getOrderCount();
+        String fullUrl = tradeServiceUrl + "/api/v1/tradeOrders/bulk";
+        
+        logger.info("BULK_SUBMISSION: Sending HTTP POST to trade service bulk endpoint for {} orders, url={}, thread={}, timestamp={}",
+                orderCount, fullUrl, threadName, startTime);
+
+        try {
+            ResponseEntity<BulkTradeOrderResponseDTO> response = restTemplate.postForEntity(
+                    fullUrl,
+                    new HttpEntity<>(bulkRequest),
+                    BulkTradeOrderResponseDTO.class);
+
+            long duration = System.currentTimeMillis() - startTime;
+            HttpStatus statusCode = HttpStatus.valueOf(response.getStatusCode().value());
+            
+            logger.info("BULK_SUBMISSION: Trade service HTTP response received for {} orders, status={}, duration={}ms, thread={}",
+                    orderCount, statusCode, duration, threadName);
+
+            // Handle successful response (HTTP 201)
+            if (statusCode == HttpStatus.CREATED) {
+                BulkTradeOrderResponseDTO responseBody = response.getBody();
+                
+                if (responseBody == null) {
+                    logger.error("BULK_SUBMISSION: Trade service returned null response body for {} orders, thread={}",
+                            orderCount, threadName);
+                    throw new RuntimeException("Trade service returned null response body");
+                }
+
+                logger.info("BULK_SUBMISSION: Trade service SUCCESS for {} orders, successful={}, failed={}, thread={}",
+                        orderCount, responseBody.getSuccessful(), responseBody.getFailed(), threadName);
+                
+                // Log performance metrics
+                if (responseBody.getSuccessful() > 0) {
+                    double avgTimePerOrder = (double) duration / responseBody.getSuccessful();
+                    logger.info("BULK_SUBMISSION_PERFORMANCE: Processed {} orders in {}ms (avg {:.2f}ms per order), success_rate={:.2f}%",
+                            responseBody.getSuccessful(), duration, avgTimePerOrder, responseBody.getSuccessRate() * 100);
+                }
+
+                return responseBody;
+            }
+            // Handle HTTP 400 Bad Request
+            else if (statusCode == HttpStatus.BAD_REQUEST) {
+                BulkTradeOrderResponseDTO errorResponse = response.getBody();
+                String errorMessage = errorResponse != null ? errorResponse.getMessage() : "Bad Request";
+                
+                logger.error("BULK_SUBMISSION: Trade service rejected bulk request with HTTP 400 for {} orders: {}, thread={}",
+                        orderCount, errorMessage, threadName);
+                
+                throw new RuntimeException(String.format(
+                        "Trade service rejected bulk request with HTTP 400: %s", errorMessage));
+            }
+            // Handle HTTP 500 Internal Server Error
+            else if (statusCode == HttpStatus.INTERNAL_SERVER_ERROR) {
+                logger.error("BULK_SUBMISSION: Trade service internal error during bulk submission for {} orders, status={}, thread={}",
+                        orderCount, statusCode, threadName);
+                
+                throw new RuntimeException("Trade service internal error during bulk submission");
+            }
+            // Handle other HTTP status codes
+            else {
+                logger.error("BULK_SUBMISSION: Trade service returned unexpected status {} for {} orders, thread={}",
+                        statusCode, orderCount, threadName);
+                
+                throw new RuntimeException(String.format(
+                        "Trade service returned unexpected status: %s", statusCode));
+            }
+
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            long duration = System.currentTimeMillis() - startTime;
+            String responseBody = e.getResponseBodyAsString();
+            
+            logger.error("BULK_SUBMISSION: Trade service HTTP client error for {} orders, status={}, duration={}ms, thread={}, response_body={}, error={}",
+                    orderCount, e.getStatusCode(), duration, threadName, responseBody, e.getMessage(), e);
+            
+            throw new RuntimeException(String.format(
+                    "Trade service HTTP client error: %s %s - %s", 
+                    e.getStatusCode(), e.getStatusText(), responseBody), e);
+
+        } catch (org.springframework.web.client.HttpServerErrorException e) {
+            long duration = System.currentTimeMillis() - startTime;
+            String responseBody = e.getResponseBodyAsString();
+            
+            logger.error("BULK_SUBMISSION: Trade service server error for {} orders, status={}, duration={}ms, thread={}, response_body={}, error={}",
+                    orderCount, e.getStatusCode(), duration, threadName, responseBody, e.getMessage(), e);
+            
+            throw new RuntimeException(String.format(
+                    "Trade service server error: %s %s - %s", 
+                    e.getStatusCode(), e.getStatusText(), responseBody), e);
+
+        } catch (org.springframework.web.client.ResourceAccessException e) {
+            long duration = System.currentTimeMillis() - startTime;
+            
+            logger.error("BULK_SUBMISSION: Trade service connectivity error for {} orders, duration={}ms, thread={}, error={}",
+                    orderCount, duration, threadName, e.getMessage(), e);
+            
+            throw new RuntimeException(String.format(
+                    "Trade service connectivity error: %s", e.getMessage()), e);
+
+        } catch (org.springframework.web.client.RestClientException e) {
+            long duration = System.currentTimeMillis() - startTime;
+            
+            logger.error("BULK_SUBMISSION: Trade service REST client error for {} orders, duration={}ms, thread={}, error={}",
+                    orderCount, duration, threadName, e.getMessage(), e);
+            
+            throw new RuntimeException(String.format(
+                    "Trade service REST client error: %s", e.getMessage()), e);
+
+        } catch (Exception e) {
+            long duration = System.currentTimeMillis() - startTime;
+            
+            logger.error("BULK_SUBMISSION: Unexpected error during trade service bulk call for {} orders, duration={}ms, thread={}, error={}",
+                    orderCount, duration, threadName, e.getMessage(), e);
+            
+            throw new RuntimeException(String.format(
+                    "Unexpected error during trade service bulk call: %s", e.getMessage()), e);
+        }
+    }
+
+    /**
+     * Transform bulk trade service response to order service format.
+     * Maps the trade service bulk response to the existing BatchSubmitResponseDTO format
+     * to maintain API contract compatibility.
+     * 
+     * @param bulkResponse The bulk response from the trade service
+     * @param originalOrderIds The original order IDs that were requested for submission
+     * @return BatchSubmitResponseDTO in the expected order service format
+     */
+    public BatchSubmitResponseDTO transformBulkResponseToOrderServiceFormat(
+            BulkTradeOrderResponseDTO bulkResponse, List<Integer> originalOrderIds) {
+        long startTime = System.currentTimeMillis();
+        
+        if (bulkResponse == null) {
+            logger.error("Cannot transform response: bulk response is null");
+            throw new IllegalArgumentException("Bulk response cannot be null");
+        }
+
+        if (originalOrderIds == null || originalOrderIds.isEmpty()) {
+            logger.error("Cannot transform response: original order IDs list is null or empty");
+            throw new IllegalArgumentException("Original order IDs cannot be null or empty");
+        }
+
+        logger.info("Transforming bulk response to order service format: {} total requested, {} successful, {} failed",
+                bulkResponse.getTotalRequested(), bulkResponse.getSuccessful(), bulkResponse.getFailed());
+
+        try {
+            List<OrderSubmitResultDTO> results = new ArrayList<>();
+            
+            // Create a map of request index to result for efficient lookup
+            Map<Integer, TradeOrderResultDTO> resultMap = new HashMap<>();
+            if (bulkResponse.getResults() != null) {
+                for (TradeOrderResultDTO result : bulkResponse.getResults()) {
+                    if (result.getRequestIndex() != null) {
+                        resultMap.put(result.getRequestIndex(), result);
+                    }
+                }
+            }
+
+            // Transform each original order ID to a result
+            for (int i = 0; i < originalOrderIds.size(); i++) {
+                Integer orderId = originalOrderIds.get(i);
+                TradeOrderResultDTO tradeResult = resultMap.get(i);
+                
+                if (tradeResult != null && tradeResult.isSuccess()) {
+                    // Successful submission
+                    Integer tradeOrderId = tradeResult.getTradeOrderId();
+                    results.add(OrderSubmitResultDTO.success(orderId, tradeOrderId, i));
+                    
+                    logger.debug("Transformed successful result for order {}: tradeOrderId={}, requestIndex={}",
+                            orderId, tradeOrderId, i);
+                } else {
+                    // Failed submission or no result found
+                    String errorMessage = tradeResult != null ? tradeResult.getMessage() : 
+                            "No result found in bulk response";
+                    results.add(OrderSubmitResultDTO.failure(orderId, errorMessage, i));
+                    
+                    logger.debug("Transformed failed result for order {}: error={}, requestIndex={}",
+                            orderId, errorMessage, i);
+                }
+            }
+
+            // Determine overall status and message
+            String status;
+            String message;
+            int successful = bulkResponse.getSuccessful();
+            int failed = bulkResponse.getFailed();
+            int total = originalOrderIds.size();
+
+            if (successful == total) {
+                status = "SUCCESS";
+                message = String.format("All %d orders submitted successfully", total);
+            } else if (successful == 0) {
+                status = "FAILURE";
+                message = String.format("All %d orders failed to submit", total);
+            } else {
+                status = "PARTIAL_SUCCESS";
+                message = String.format("%d of %d orders submitted successfully", successful, total);
+            }
+
+            BatchSubmitResponseDTO response = BatchSubmitResponseDTO.builder()
+                    .status(status)
+                    .message(message)
+                    .totalRequested(total)
+                    .successful(successful)
+                    .failed(failed)
+                    .results(results)
+                    .build();
+
+            long duration = System.currentTimeMillis() - startTime;
+            logger.info("Successfully transformed bulk response in {}ms: status={}, successful={}, failed={}",
+                    duration, status, successful, failed);
+
+            return response;
+
+        } catch (Exception e) {
+            long duration = System.currentTimeMillis() - startTime;
+            logger.error("Failed to transform bulk response after {}ms: {}", duration, e.getMessage(), e);
+            throw new RuntimeException("Failed to transform bulk response", e);
+        }
+    }
+
+    /**
      * Update order statuses from bulk response using efficient batch operations.
      * Handles partial success scenarios where some orders succeed and others fail.
      * Uses simplified transaction management for improved performance.
@@ -494,87 +1026,188 @@ public class OrderService {
      * @param bulkResponse The bulk response from the trade service
      */
     public void updateOrderStatusesFromBulkResponse(List<Order> orders, BulkTradeOrderResponseDTO bulkResponse) {
-        if (orders == null || orders.isEmpty() || bulkResponse == null) {
-            logger.warn("Invalid parameters for bulk status update: orders={}, bulkResponse={}", 
-                    orders != null ? orders.size() : "null", bulkResponse != null ? "present" : "null");
-            return;
+        long startTime = System.currentTimeMillis();
+        String threadName = Thread.currentThread().getName();
+        
+        // Validate input parameters with detailed logging
+        if (orders == null || orders.isEmpty()) {
+            logger.error("BULK_STATUS_UPDATE: Cannot update order statuses - orders list is null or empty, thread={}",
+                    threadName);
+            throw new IllegalArgumentException("Orders list cannot be null or empty");
         }
 
-        logger.info("Updating order statuses from bulk response: {} orders, {} results", 
-                orders.size(), bulkResponse.getResults() != null ? bulkResponse.getResults().size() : 0);
+        if (bulkResponse == null) {
+            logger.error("BULK_STATUS_UPDATE: Cannot update order statuses - bulk response is null, thread={}",
+                    threadName);
+            throw new IllegalArgumentException("Bulk response cannot be null");
+        }
+
+        int orderCount = orders.size();
+        int resultCount = bulkResponse.getResults() != null ? bulkResponse.getResults().size() : 0;
+        
+        logger.info("BULK_STATUS_UPDATE: Starting status update for {} orders with {} results, thread={}, timestamp={}",
+                orderCount, resultCount, threadName, startTime);
+
+        // Validate response consistency
+        if (bulkResponse.getResults() == null || bulkResponse.getResults().isEmpty()) {
+            logger.warn("BULK_STATUS_UPDATE: Bulk response contains no results for {} orders, thread={}",
+                    orderCount, threadName);
+        }
 
         transactionTemplate.execute(status -> {
             try {
-                // Create maps for efficient lookups
-                Map<Integer, Order> orderMap = orders.stream()
-                        .collect(HashMap::new, (map, order) -> map.put(order.getId(), order), HashMap::putAll);
+                // Create maps for efficient lookups with error tracking
+                Map<Integer, Order> orderMap = new HashMap<>();
+                for (Order order : orders) {
+                    if (order != null && order.getId() != null) {
+                        orderMap.put(order.getId(), order);
+                    } else {
+                        logger.warn("BULK_STATUS_UPDATE: Skipping null order or order with null ID, thread={}",
+                                threadName);
+                    }
+                }
                 
                 Map<Integer, TradeOrderResultDTO> resultMap = new HashMap<>();
                 if (bulkResponse.getResults() != null) {
                     for (TradeOrderResultDTO result : bulkResponse.getResults()) {
                         if (result.getRequestIndex() != null && result.getRequestIndex() < orders.size()) {
                             Order order = orders.get(result.getRequestIndex());
-                            if (order != null) {
+                            if (order != null && order.getId() != null) {
                                 resultMap.put(order.getId(), result);
+                                logger.debug("BULK_STATUS_UPDATE: Mapped result for order {} at index {}: success={}, tradeOrderId={}, thread={}",
+                                        order.getId(), result.getRequestIndex(), result.isSuccess(), 
+                                        result.getTradeOrderId(), threadName);
+                            } else {
+                                logger.warn("BULK_STATUS_UPDATE: Invalid order at index {}, thread={}",
+                                        result.getRequestIndex(), threadName);
                             }
+                        } else {
+                            logger.warn("BULK_STATUS_UPDATE: Invalid result with requestIndex={} for {} orders, thread={}",
+                                    result.getRequestIndex(), orders.size(), threadName);
                         }
                     }
                 }
 
                 // Get SENT status once for all successful updates
-                Status sentStatus = getSentStatus();
+                Status sentStatus;
+                try {
+                    sentStatus = getSentStatus();
+                    logger.debug("BULK_STATUS_UPDATE: Retrieved SENT status for batch update, thread={}", threadName);
+                } catch (Exception e) {
+                    logger.error("BULK_STATUS_UPDATE: Failed to retrieve SENT status, thread={}, error={}",
+                            threadName, e.getMessage(), e);
+                    throw new RuntimeException("Failed to retrieve SENT status", e);
+                }
                 
-                // Track successful and failed updates
+                // Track successful and failed updates with detailed logging
                 List<Order> successfulOrders = new ArrayList<>();
                 List<Order> failedOrders = new ArrayList<>();
+                List<String> updateErrors = new ArrayList<>();
                 
                 // Process each order based on its result
                 for (Order order : orders) {
-                    TradeOrderResultDTO result = resultMap.get(order.getId());
-                    
-                    if (result != null && result.isSuccess() && result.getTradeOrderId() != null) {
-                        // Order was successfully processed by trade service
-                        Order updatedOrder = Order.builder()
-                                .id(order.getId())
-                                .blotter(order.getBlotter())
-                                .status(sentStatus)
-                                .portfolioId(order.getPortfolioId())
-                                .orderType(order.getOrderType())
-                                .securityId(order.getSecurityId())
-                                .quantity(order.getQuantity())
-                                .limitPrice(order.getLimitPrice())
-                                .tradeOrderId(result.getTradeOrderId())
-                                .orderTimestamp(order.getOrderTimestamp())
-                                .version(order.getVersion())
-                                .build();
+                    try {
+                        TradeOrderResultDTO result = resultMap.get(order.getId());
                         
-                        successfulOrders.add(updatedOrder);
-                        logger.debug("Prepared order {} for successful update with tradeOrderId {}", 
-                                order.getId(), result.getTradeOrderId());
-                    } else {
-                        // Order failed or no result found - leave in NEW status
+                        if (result != null && result.isSuccess() && result.getTradeOrderId() != null) {
+                            // Order was successfully processed by trade service
+                            Order updatedOrder = Order.builder()
+                                    .id(order.getId())
+                                    .blotter(order.getBlotter())
+                                    .status(sentStatus)
+                                    .portfolioId(order.getPortfolioId())
+                                    .orderType(order.getOrderType())
+                                    .securityId(order.getSecurityId())
+                                    .quantity(order.getQuantity())
+                                    .limitPrice(order.getLimitPrice())
+                                    .tradeOrderId(result.getTradeOrderId())
+                                    .orderTimestamp(order.getOrderTimestamp())
+                                    .version(order.getVersion())
+                                    .build();
+                            
+                            successfulOrders.add(updatedOrder);
+                            logger.debug("BULK_STATUS_UPDATE: Prepared order {} for successful update with tradeOrderId {}, thread={}",
+                                    order.getId(), result.getTradeOrderId(), threadName);
+                        } else {
+                            // Order failed or no result found - leave in NEW status
+                            failedOrders.add(order);
+                            String failureReason = result != null ? result.getMessage() : "No result found in bulk response";
+                            logger.debug("BULK_STATUS_UPDATE: Order {} failed in bulk submission: {}, thread={}",
+                                    order.getId(), failureReason, threadName);
+                        }
+                    } catch (Exception e) {
+                        String errorMsg = String.format("Failed to process order %s: %s", order.getId(), e.getMessage());
+                        updateErrors.add(errorMsg);
                         failedOrders.add(order);
-                        String failureReason = result != null ? result.getMessage() : "No result found in bulk response";
-                        logger.debug("Order {} failed in bulk submission: {}", order.getId(), failureReason);
+                        logger.error("BULK_STATUS_UPDATE: Error processing order {}, thread={}, error={}",
+                                order.getId(), threadName, e.getMessage(), e);
                     }
                 }
                 
-                // Perform batch updates for successful orders
-                if (!successfulOrders.isEmpty()) {
-                    logger.info("Performing batch update for {} successful orders", successfulOrders.size());
-                    orderRepository.saveAll(successfulOrders);
-                    logger.info("Successfully updated {} orders to SENT status with trade order IDs", 
-                            successfulOrders.size());
+                // Log any processing errors
+                if (!updateErrors.isEmpty()) {
+                    logger.warn("BULK_STATUS_UPDATE: Encountered {} processing errors during status update, thread={}",
+                            updateErrors.size(), threadName);
+                    for (String error : updateErrors) {
+                        logger.warn("BULK_STATUS_UPDATE: Processing error: {}, thread={}", error, threadName);
+                    }
                 }
                 
-                // Log summary of batch update operation
-                logger.info("Bulk status update completed: {} successful, {} failed out of {} total orders", 
-                        successfulOrders.size(), failedOrders.size(), orders.size());
+                // Perform batch updates for successful orders with error handling
+                if (!successfulOrders.isEmpty()) {
+                    try {
+                        logger.info("BULK_STATUS_UPDATE: Performing batch database update for {} successful orders, thread={}",
+                                successfulOrders.size(), threadName);
+                        
+                        long dbStartTime = System.currentTimeMillis();
+                        orderRepository.saveAll(successfulOrders);
+                        long dbDuration = System.currentTimeMillis() - dbStartTime;
+                        
+                        logger.info("BULK_STATUS_UPDATE: Successfully updated {} orders to SENT status with trade order IDs in {}ms, thread={}",
+                                successfulOrders.size(), dbDuration, threadName);
+                        
+                        // Log performance metrics for database operations
+                        if (successfulOrders.size() > 0) {
+                            double avgDbTimePerOrder = (double) dbDuration / successfulOrders.size();
+                            logger.info("BULK_STATUS_UPDATE_PERFORMANCE: Database batch update: {} orders in {}ms (avg {:.2f}ms per order), thread={}",
+                                    successfulOrders.size(), dbDuration, avgDbTimePerOrder, threadName);
+                        }
+                        
+                    } catch (Exception e) {
+                        logger.error("BULK_STATUS_UPDATE: Failed to perform batch database update for {} orders, thread={}, error={}",
+                                successfulOrders.size(), threadName, e.getMessage(), e);
+                        throw new RuntimeException("Batch database update failed", e);
+                    }
+                } else {
+                    logger.warn("BULK_STATUS_UPDATE: No successful orders to update in database, thread={}", threadName);
+                }
+                
+                // Log comprehensive summary of batch update operation
+                long totalDuration = System.currentTimeMillis() - startTime;
+                logger.info("BULK_STATUS_UPDATE: Completed status update in {}ms - {} successful, {} failed out of {} total orders, thread={}",
+                        totalDuration, successfulOrders.size(), failedOrders.size(), orderCount, threadName);
+                
+                // Log success rate metrics
+                if (orderCount > 0) {
+                    double successRate = (double) successfulOrders.size() / orderCount * 100;
+                    logger.info("BULK_STATUS_UPDATE_METRICS: Success rate: {:.2f}% ({}/{}), processing_time={}ms, thread={}",
+                            successRate, successfulOrders.size(), orderCount, totalDuration, threadName);
+                }
+                
+                // Log failed orders for monitoring
+                if (!failedOrders.isEmpty()) {
+                    List<Integer> failedOrderIds = failedOrders.stream()
+                            .map(Order::getId)
+                            .toList();
+                    logger.warn("BULK_STATUS_UPDATE: Failed order IDs: {}, thread={}", failedOrderIds, threadName);
+                }
                 
                 return null;
                 
             } catch (Exception e) {
-                logger.error("Failed to update order statuses from bulk response: {}", e.getMessage(), e);
+                long totalDuration = System.currentTimeMillis() - startTime;
+                logger.error("BULK_STATUS_UPDATE: Failed to update order statuses from bulk response after {}ms, thread={}, error={}",
+                        totalDuration, threadName, e.getMessage(), e);
                 status.setRollbackOnly();
                 throw new RuntimeException("Bulk status update failed", e);
             }
@@ -1165,322 +1798,4 @@ public class OrderService {
         return null; // Valid
     }
 
-    /**
-     * Build a bulk trade order request from a list of Order entities.
-     * Maps order fields to TradeOrderPostDTO format and validates required fields.
-     * 
-     * @param orders List of Order entities to convert
-     * @return BulkTradeOrderRequestDTO containing the mapped trade orders
-     * @throws IllegalArgumentException if any order is missing required fields
-     */
-    public BulkTradeOrderRequestDTO buildBulkTradeOrderRequest(List<Order> orders) {
-        if (orders == null || orders.isEmpty()) {
-            throw new IllegalArgumentException("Orders list cannot be null or empty");
-        }
-
-        logger.info("Building bulk trade order request for {} orders", orders.size());
-
-        List<TradeOrderPostDTO> tradeOrders = new ArrayList<>();
-        
-        for (Order order : orders) {
-            // Validate required fields before building request
-            validateOrderForBulkSubmission(order);
-            
-            // Map Order entity to TradeOrderPostDTO
-            TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
-                    .orderId(order.getId())
-                    .portfolioId(order.getPortfolioId())
-                    .orderType(order.getOrderType().getAbbreviation())
-                    .securityId(order.getSecurityId())
-                    .quantity(order.getQuantity())
-                    .limitPrice(order.getLimitPrice())
-                    .tradeTimestamp(order.getOrderTimestamp()) // Use order timestamp as trade timestamp
-                    .blotterId(order.getBlotter() != null ? order.getBlotter().getId() : null)
-                    .build();
-            
-            tradeOrders.add(tradeOrder);
-            
-            logger.debug("Mapped order {} to trade order: portfolioId={}, orderType={}, securityId={}, quantity={}, limitPrice={}, blotterId={}",
-                    order.getId(), tradeOrder.getPortfolioId(), tradeOrder.getOrderType(), 
-                    tradeOrder.getSecurityId(), tradeOrder.getQuantity(), tradeOrder.getLimitPrice(), tradeOrder.getBlotterId());
-        }
-
-        BulkTradeOrderRequestDTO bulkRequest = BulkTradeOrderRequestDTO.of(tradeOrders);
-        
-        logger.info("Successfully built bulk trade order request with {} trade orders", bulkRequest.getOrderCount());
-        
-        return bulkRequest;
-    }
-
-    /**
-     * Validate that an order has all required fields for bulk submission to the trade service.
-     * 
-     * @param order The order to validate
-     * @throws IllegalArgumentException if any required field is missing or invalid
-     */
-    private void validateOrderForBulkSubmission(Order order) {
-        if (order == null) {
-            throw new IllegalArgumentException("Order cannot be null");
-        }
-
-        if (order.getId() == null) {
-            throw new IllegalArgumentException("Order ID is required");
-        }
-
-        if (order.getPortfolioId() == null || order.getPortfolioId().trim().isEmpty()) {
-            throw new IllegalArgumentException("Portfolio ID is required for order " + order.getId());
-        }
-
-        if (order.getOrderType() == null || order.getOrderType().getAbbreviation() == null || 
-            order.getOrderType().getAbbreviation().trim().isEmpty()) {
-            throw new IllegalArgumentException("Order type is required for order " + order.getId());
-        }
-
-        if (order.getSecurityId() == null || order.getSecurityId().trim().isEmpty()) {
-            throw new IllegalArgumentException("Security ID is required for order " + order.getId());
-        }
-
-        if (order.getQuantity() == null || order.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Quantity must be positive for order " + order.getId());
-        }
-
-        if (order.getLimitPrice() == null || order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Limit price must be positive for order " + order.getId());
-        }
-
-        if (order.getOrderTimestamp() == null) {
-            throw new IllegalArgumentException("Order timestamp is required for order " + order.getId());
-        }
-
-        // Note: blotterId is optional in the trade service API, so we don't validate it as required
-        
-        logger.debug("Order {} passed validation for bulk submission", order.getId());
-    }
-
-    /**
-     * Call the trade service bulk endpoint to submit multiple orders in a single request.
-     * Makes HTTP POST to /api/v1/tradeOrders/bulk with appropriate timeout settings.
-     * Implements comprehensive error handling for various HTTP status codes and network issues.
-     * 
-     * @param bulkRequest The bulk trade order request containing all orders to submit
-     * @return BulkTradeOrderResponseDTO containing the results from the trade service
-     * @throws RuntimeException if the trade service call fails or returns an error
-     */
-    public BulkTradeOrderResponseDTO callTradeServiceBulk(BulkTradeOrderRequestDTO bulkRequest) {
-        if (bulkRequest == null || bulkRequest.getTradeOrders() == null || bulkRequest.getTradeOrders().isEmpty()) {
-            throw new IllegalArgumentException("Bulk request cannot be null or empty");
-        }
-
-        String threadName = Thread.currentThread().getName();
-        long callStart = System.currentTimeMillis();
-        String fullUrl = tradeServiceUrl + "/api/v1/tradeOrders/bulk";
-        
-        logger.info("Starting bulk trade service call for {} orders, url={}, thread={}, timestamp={}", 
-                bulkRequest.getOrderCount(), fullUrl, threadName, callStart);
-
-        try {
-            // Configure RestTemplate with bulk operation timeout
-            // Use longer timeout for bulk operations as they may take more time
-            int bulkTimeout = Math.max(tradeServiceTimeout, 30000); // Minimum 30 seconds for bulk operations
-            
-            // Create HTTP entity with the bulk request
-            HttpEntity<BulkTradeOrderRequestDTO> httpEntity = new HttpEntity<>(bulkRequest);
-            
-            logger.debug("Sending bulk request with {} orders to trade service: {}", 
-                    bulkRequest.getOrderCount(), fullUrl);
-
-            // Make the HTTP POST call to the trade service bulk endpoint
-            ResponseEntity<BulkTradeOrderResponseDTO> response = restTemplate.postForEntity(
-                    fullUrl,
-                    httpEntity,
-                    BulkTradeOrderResponseDTO.class);
-
-            long callEnd = System.currentTimeMillis();
-            long duration = callEnd - callStart;
-
-            // Log response details
-            logger.info("Trade service bulk call completed: status={}, duration={}ms, thread={}", 
-                    response.getStatusCode(), duration, threadName);
-
-            // Handle different HTTP status codes
-            if (response.getStatusCode() == HttpStatus.CREATED) {
-                // HTTP 201 - Success
-                BulkTradeOrderResponseDTO responseBody = response.getBody();
-                if (responseBody != null) {
-                    logger.info("Bulk submission successful: totalRequested={}, successful={}, failed={}, thread={}", 
-                            responseBody.getTotalRequested(), responseBody.getSuccessful(), 
-                            responseBody.getFailed(), threadName);
-                    return responseBody;
-                } else {
-                    String errorMsg = "Trade service returned null response body for bulk submission";
-                    logger.error("Trade service bulk submission failed: status={}, error={}, orderCount={}, thread={}", 
-                            response.getStatusCode(), errorMsg, bulkRequest.getOrderCount(), threadName);
-                    throw new RuntimeException(errorMsg);
-                }
-            } else if (response.getStatusCode() == HttpStatus.BAD_REQUEST) {
-                // HTTP 400 - Bad Request (validation errors, etc.)
-                String errorMsg = String.format("Trade service rejected bulk request with HTTP 400: %s", 
-                        response.getBody() != null ? response.getBody().toString() : "No error details");
-                logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, error={}, thread={}", 
-                        response.getStatusCode(), response.getBody(), bulkRequest.getOrderCount(), errorMsg, threadName);
-                throw new RuntimeException(errorMsg);
-            } else if (response.getStatusCode().is5xxServerError()) {
-                // HTTP 500+ - Server Error
-                String errorMsg = String.format("Trade service internal error during bulk submission: HTTP %s", 
-                        response.getStatusCode());
-                logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, error={}, thread={}", 
-                        response.getStatusCode(), response.getBody(), bulkRequest.getOrderCount(), errorMsg, threadName);
-                throw new RuntimeException(errorMsg);
-            } else {
-                // Other unexpected status codes
-                String errorMsg = String.format("Trade service returned unexpected status code: HTTP %s", 
-                        response.getStatusCode());
-                logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, error={}, thread={}", 
-                        response.getStatusCode(), response.getBody(), bulkRequest.getOrderCount(), errorMsg, threadName);
-                throw new RuntimeException(errorMsg);
-            }
-
-        } catch (org.springframework.web.client.HttpClientErrorException e) {
-            // HTTP 4xx errors (400, 401, 403, 404, etc.)
-            long callEnd = System.currentTimeMillis();
-            String errorMsg = String.format("Trade service HTTP client error: %s - %s", 
-                    e.getStatusCode(), e.getResponseBodyAsString());
-            logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, duration={}ms, error={}, thread={}", 
-                    e.getStatusCode(), e.getResponseBodyAsString(), bulkRequest.getOrderCount(), 
-                    (callEnd - callStart), errorMsg, threadName, e);
-            throw new RuntimeException(errorMsg, e);
-            
-        } catch (org.springframework.web.client.HttpServerErrorException e) {
-            // HTTP 5xx errors (500, 502, 503, 504, etc.)
-            long callEnd = System.currentTimeMillis();
-            String errorMsg = String.format("Trade service server error: %s - %s", 
-                    e.getStatusCode(), e.getResponseBodyAsString());
-            logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, duration={}ms, error={}, thread={}", 
-                    e.getStatusCode(), e.getResponseBodyAsString(), bulkRequest.getOrderCount(), 
-                    (callEnd - callStart), errorMsg, threadName, e);
-            throw new RuntimeException(errorMsg, e);
-            
-        } catch (org.springframework.web.client.ResourceAccessException e) {
-            // Network connectivity issues, timeouts, connection refused, etc.
-            long callEnd = System.currentTimeMillis();
-            String errorMsg = String.format("Trade service connectivity error: %s", e.getMessage());
-            logger.error("Trade service bulk submission failed: orderCount={}, duration={}ms, error={}, thread={}, cause={}", 
-                    bulkRequest.getOrderCount(), (callEnd - callStart), errorMsg, threadName, 
-                    e.getCause() != null ? e.getCause().getMessage() : "Unknown", e);
-            throw new RuntimeException(errorMsg, e);
-            
-        } catch (org.springframework.web.client.RestClientException e) {
-            // Other REST client errors (serialization, etc.)
-            long callEnd = System.currentTimeMillis();
-            String errorMsg = String.format("Trade service REST client error: %s", e.getMessage());
-            logger.error("Trade service bulk submission failed: orderCount={}, duration={}ms, error={}, thread={}", 
-                    bulkRequest.getOrderCount(), (callEnd - callStart), errorMsg, threadName, e);
-            throw new RuntimeException(errorMsg, e);
-            
-        } catch (Exception e) {
-            // Unexpected errors
-            long callEnd = System.currentTimeMillis();
-            String errorMsg = String.format("Unexpected error during trade service bulk call: %s", e.getMessage());
-            logger.error("Trade service bulk submission failed: orderCount={}, duration={}ms, error={}, thread={}", 
-                    bulkRequest.getOrderCount(), (callEnd - callStart), errorMsg, threadName, e);
-            throw new RuntimeException(errorMsg, e);
-        }
-    }
-
-    /**
-     * Transform bulk trade service response to order service format.
-     * Maps BulkTradeOrderResponseDTO to BatchSubmitResponseDTO format while preserving
-     * request index mapping and extracting trade order IDs for successful responses.
-     * 
-     * @param bulkResponse The bulk response from the trade service
-     * @param originalOrderIds The original order IDs in request order for correlation
-     * @return BatchSubmitResponseDTO in the expected order service format
-     * @throws IllegalArgumentException if bulkResponse is null or originalOrderIds is null/empty
-     */
-    public BatchSubmitResponseDTO transformBulkResponseToOrderServiceFormat(
-            BulkTradeOrderResponseDTO bulkResponse, List<Integer> originalOrderIds) {
-        
-        if (bulkResponse == null) {
-            throw new IllegalArgumentException("Bulk response cannot be null");
-        }
-        
-        if (originalOrderIds == null || originalOrderIds.isEmpty()) {
-            throw new IllegalArgumentException("Original order IDs cannot be null or empty");
-        }
-        
-        logger.info("Transforming bulk response to order service format: status={}, totalRequested={}, successful={}, failed={}", 
-                bulkResponse.getStatus(), bulkResponse.getTotalRequested(), 
-                bulkResponse.getSuccessful(), bulkResponse.getFailed());
-        
-        // Create a map of request index to trade order result for efficient lookup
-        Map<Integer, TradeOrderResultDTO> resultsByIndex = new HashMap<>();
-        if (bulkResponse.getResults() != null) {
-            for (TradeOrderResultDTO result : bulkResponse.getResults()) {
-                if (result.getRequestIndex() != null) {
-                    resultsByIndex.put(result.getRequestIndex(), result);
-                }
-            }
-        }
-        
-        // Transform each original order to OrderSubmitResultDTO
-        List<OrderSubmitResultDTO> orderResults = new ArrayList<>();
-        for (int i = 0; i < originalOrderIds.size(); i++) {
-            Integer orderId = originalOrderIds.get(i);
-            TradeOrderResultDTO tradeResult = resultsByIndex.get(i);
-            
-            OrderSubmitResultDTO orderResult;
-            if (tradeResult != null) {
-                // Transform trade service result to order service result
-                if (tradeResult.isSuccess()) {
-                    Integer tradeOrderId = tradeResult.getTradeOrderId();
-                    orderResult = OrderSubmitResultDTO.success(orderId, tradeOrderId, i);
-                    logger.debug("Order {} succeeded with trade order ID {}", orderId, tradeOrderId);
-                } else {
-                    orderResult = OrderSubmitResultDTO.failure(orderId, tradeResult.getMessage(), i);
-                    logger.debug("Order {} failed: {}", orderId, tradeResult.getMessage());
-                }
-            } else {
-                // No result found for this index - treat as failure
-                String errorMessage = "No result returned from trade service for this order";
-                orderResult = OrderSubmitResultDTO.failure(orderId, errorMessage, i);
-                logger.warn("No trade service result found for order {} at index {}", orderId, i);
-            }
-            
-            orderResults.add(orderResult);
-        }
-        
-        // Determine overall status based on trade service response
-        String overallStatus;
-        String overallMessage;
-        
-        if (bulkResponse.isCompleteSuccess()) {
-            overallStatus = "SUCCESS";
-            overallMessage = String.format("All %d orders submitted successfully", originalOrderIds.size());
-        } else if (bulkResponse.isCompleteFailure()) {
-            overallStatus = "FAILURE";
-            overallMessage = bulkResponse.getMessage() != null ? bulkResponse.getMessage() : 
-                    String.format("All %d orders failed to submit", originalOrderIds.size());
-        } else {
-            // Partial success or mixed results
-            overallStatus = "PARTIAL";
-            int successful = bulkResponse.getSuccessful() != null ? bulkResponse.getSuccessful() : 0;
-            int failed = bulkResponse.getFailed() != null ? bulkResponse.getFailed() : 0;
-            overallMessage = String.format("%d of %d orders submitted successfully, %d failed", 
-                    successful, originalOrderIds.size(), failed);
-        }
-        
-        BatchSubmitResponseDTO response = BatchSubmitResponseDTO.builder()
-                .status(overallStatus)
-                .message(overallMessage)
-                .totalRequested(originalOrderIds.size())
-                .successful(bulkResponse.getSuccessful() != null ? bulkResponse.getSuccessful() : 0)
-                .failed(bulkResponse.getFailed() != null ? bulkResponse.getFailed() : 0)
-                .results(orderResults)
-                .build();
-        
-        logger.info("Successfully transformed bulk response: status={}, successful={}, failed={}, totalResults={}", 
-                response.getStatus(), response.getSuccessful(), response.getFailed(), response.getResults().size());
-        
-        return response;
-    }
 }
