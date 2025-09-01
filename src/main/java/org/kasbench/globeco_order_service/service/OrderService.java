@@ -14,6 +14,7 @@ import org.kasbench.globeco_order_service.dto.BatchSubmitRequestDTO;
 import org.kasbench.globeco_order_service.dto.BatchSubmitResponseDTO;
 import org.kasbench.globeco_order_service.dto.OrderSubmitResultDTO;
 import org.kasbench.globeco_order_service.dto.BulkTradeOrderRequestDTO;
+import org.kasbench.globeco_order_service.dto.BulkTradeOrderResponseDTO;
 import org.kasbench.globeco_order_service.repository.OrderRepository;
 import org.kasbench.globeco_order_service.repository.StatusRepository;
 import org.kasbench.globeco_order_service.repository.BlotterRepository;
@@ -1668,5 +1669,135 @@ public class OrderService {
         // Note: blotterId is optional in the trade service API, so we don't validate it as required
         
         logger.debug("Order {} passed validation for bulk submission", order.getId());
+    }
+
+    /**
+     * Call the trade service bulk endpoint to submit multiple orders in a single request.
+     * Makes HTTP POST to /api/v1/tradeOrders/bulk with appropriate timeout settings.
+     * Implements comprehensive error handling for various HTTP status codes and network issues.
+     * 
+     * @param bulkRequest The bulk trade order request containing all orders to submit
+     * @return BulkTradeOrderResponseDTO containing the results from the trade service
+     * @throws RuntimeException if the trade service call fails or returns an error
+     */
+    public BulkTradeOrderResponseDTO callTradeServiceBulk(BulkTradeOrderRequestDTO bulkRequest) {
+        if (bulkRequest == null || bulkRequest.getTradeOrders() == null || bulkRequest.getTradeOrders().isEmpty()) {
+            throw new IllegalArgumentException("Bulk request cannot be null or empty");
+        }
+
+        String threadName = Thread.currentThread().getName();
+        long callStart = System.currentTimeMillis();
+        String fullUrl = tradeServiceUrl + "/api/v1/tradeOrders/bulk";
+        
+        logger.info("Starting bulk trade service call for {} orders, url={}, thread={}, timestamp={}", 
+                bulkRequest.getOrderCount(), fullUrl, threadName, callStart);
+
+        try {
+            // Configure RestTemplate with bulk operation timeout
+            // Use longer timeout for bulk operations as they may take more time
+            int bulkTimeout = Math.max(tradeServiceTimeout, 30000); // Minimum 30 seconds for bulk operations
+            
+            // Create HTTP entity with the bulk request
+            HttpEntity<BulkTradeOrderRequestDTO> httpEntity = new HttpEntity<>(bulkRequest);
+            
+            logger.debug("Sending bulk request with {} orders to trade service: {}", 
+                    bulkRequest.getOrderCount(), fullUrl);
+
+            // Make the HTTP POST call to the trade service bulk endpoint
+            ResponseEntity<BulkTradeOrderResponseDTO> response = restTemplate.postForEntity(
+                    fullUrl,
+                    httpEntity,
+                    BulkTradeOrderResponseDTO.class);
+
+            long callEnd = System.currentTimeMillis();
+            long duration = callEnd - callStart;
+
+            // Log response details
+            logger.info("Trade service bulk call completed: status={}, duration={}ms, thread={}", 
+                    response.getStatusCode(), duration, threadName);
+
+            // Handle different HTTP status codes
+            if (response.getStatusCode() == HttpStatus.CREATED) {
+                // HTTP 201 - Success
+                BulkTradeOrderResponseDTO responseBody = response.getBody();
+                if (responseBody != null) {
+                    logger.info("Bulk submission successful: totalRequested={}, successful={}, failed={}, thread={}", 
+                            responseBody.getTotalRequested(), responseBody.getSuccessful(), 
+                            responseBody.getFailed(), threadName);
+                    return responseBody;
+                } else {
+                    String errorMsg = "Trade service returned null response body for bulk submission";
+                    logger.error("Trade service bulk submission failed: status={}, error={}, orderCount={}, thread={}", 
+                            response.getStatusCode(), errorMsg, bulkRequest.getOrderCount(), threadName);
+                    throw new RuntimeException(errorMsg);
+                }
+            } else if (response.getStatusCode() == HttpStatus.BAD_REQUEST) {
+                // HTTP 400 - Bad Request (validation errors, etc.)
+                String errorMsg = String.format("Trade service rejected bulk request with HTTP 400: %s", 
+                        response.getBody() != null ? response.getBody().toString() : "No error details");
+                logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, error={}, thread={}", 
+                        response.getStatusCode(), response.getBody(), bulkRequest.getOrderCount(), errorMsg, threadName);
+                throw new RuntimeException(errorMsg);
+            } else if (response.getStatusCode().is5xxServerError()) {
+                // HTTP 500+ - Server Error
+                String errorMsg = String.format("Trade service internal error during bulk submission: HTTP %s", 
+                        response.getStatusCode());
+                logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, error={}, thread={}", 
+                        response.getStatusCode(), response.getBody(), bulkRequest.getOrderCount(), errorMsg, threadName);
+                throw new RuntimeException(errorMsg);
+            } else {
+                // Other unexpected status codes
+                String errorMsg = String.format("Trade service returned unexpected status code: HTTP %s", 
+                        response.getStatusCode());
+                logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, error={}, thread={}", 
+                        response.getStatusCode(), response.getBody(), bulkRequest.getOrderCount(), errorMsg, threadName);
+                throw new RuntimeException(errorMsg);
+            }
+
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            // HTTP 4xx errors (400, 401, 403, 404, etc.)
+            long callEnd = System.currentTimeMillis();
+            String errorMsg = String.format("Trade service HTTP client error: %s - %s", 
+                    e.getStatusCode(), e.getResponseBodyAsString());
+            logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, duration={}ms, error={}, thread={}", 
+                    e.getStatusCode(), e.getResponseBodyAsString(), bulkRequest.getOrderCount(), 
+                    (callEnd - callStart), errorMsg, threadName, e);
+            throw new RuntimeException(errorMsg, e);
+            
+        } catch (org.springframework.web.client.HttpServerErrorException e) {
+            // HTTP 5xx errors (500, 502, 503, 504, etc.)
+            long callEnd = System.currentTimeMillis();
+            String errorMsg = String.format("Trade service server error: %s - %s", 
+                    e.getStatusCode(), e.getResponseBodyAsString());
+            logger.error("Trade service bulk submission failed: status={}, response={}, orderCount={}, duration={}ms, error={}, thread={}", 
+                    e.getStatusCode(), e.getResponseBodyAsString(), bulkRequest.getOrderCount(), 
+                    (callEnd - callStart), errorMsg, threadName, e);
+            throw new RuntimeException(errorMsg, e);
+            
+        } catch (org.springframework.web.client.ResourceAccessException e) {
+            // Network connectivity issues, timeouts, connection refused, etc.
+            long callEnd = System.currentTimeMillis();
+            String errorMsg = String.format("Trade service connectivity error: %s", e.getMessage());
+            logger.error("Trade service bulk submission failed: orderCount={}, duration={}ms, error={}, thread={}, cause={}", 
+                    bulkRequest.getOrderCount(), (callEnd - callStart), errorMsg, threadName, 
+                    e.getCause() != null ? e.getCause().getMessage() : "Unknown", e);
+            throw new RuntimeException(errorMsg, e);
+            
+        } catch (org.springframework.web.client.RestClientException e) {
+            // Other REST client errors (serialization, etc.)
+            long callEnd = System.currentTimeMillis();
+            String errorMsg = String.format("Trade service REST client error: %s", e.getMessage());
+            logger.error("Trade service bulk submission failed: orderCount={}, duration={}ms, error={}, thread={}", 
+                    bulkRequest.getOrderCount(), (callEnd - callStart), errorMsg, threadName, e);
+            throw new RuntimeException(errorMsg, e);
+            
+        } catch (Exception e) {
+            // Unexpected errors
+            long callEnd = System.currentTimeMillis();
+            String errorMsg = String.format("Unexpected error during trade service bulk call: %s", e.getMessage());
+            logger.error("Trade service bulk submission failed: orderCount={}, duration={}ms, error={}, thread={}", 
+                    bulkRequest.getOrderCount(), (callEnd - callStart), errorMsg, threadName, e);
+            throw new RuntimeException(errorMsg, e);
+        }
     }
 }
