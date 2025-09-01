@@ -19,8 +19,8 @@ import org.kasbench.globeco_order_service.service.SecurityCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioServiceClient;
 import org.kasbench.globeco_order_service.service.SecurityServiceClient;
+import org.kasbench.globeco_order_service.service.ValidationCacheService;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -54,7 +54,9 @@ public class OrderServiceTest {
     @Mock private PortfolioServiceClient portfolioServiceClient;
     @Mock private SecurityServiceClient securityServiceClient;
     @Mock private PlatformTransactionManager transactionManager;
-    @InjectMocks private OrderService orderService;
+    @Mock private ValidationCacheService validationCacheService;
+    
+    private OrderService orderService;
 
     private Blotter blotter;
     private Status status;
@@ -81,6 +83,31 @@ public class OrderServiceTest {
                 .orderTimestamp(now)
                 .version(1)
                 .build();
+        
+        // Manually create OrderService with mocked dependencies
+        orderService = new OrderService(
+                orderRepository,
+                statusRepository,
+                blotterRepository,
+                orderTypeRepository,
+                restTemplate,
+                securityCacheService,
+                portfolioCacheService,
+                portfolioServiceClient,
+                securityServiceClient,
+                transactionManager,
+                "http://test-trade-service:8082",
+                5000
+        );
+        
+        // Set the validation cache service using reflection since it's @Autowired
+        try {
+            java.lang.reflect.Field field = OrderService.class.getDeclaredField("validationCacheService");
+            field.setAccessible(true);
+            field.set(orderService, validationCacheService);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to inject validationCacheService", e);
+        }
     }
 
     // =============== BATCH PROCESSING TESTS ===============
@@ -673,23 +700,34 @@ public class OrderServiceTest {
         Order order1 = createOrderInStatus(1, "NEW");
         Order order2 = createOrderInStatus(2, "NEW");
         Order order3 = createOrderInStatus(3, "NEW");
+        List<Order> orders = Arrays.asList(order1, order2, order3);
         
-        // Mock order repository responses
-        when(orderRepository.findById(1)).thenReturn(Optional.of(order1));
-        when(orderRepository.findById(2)).thenReturn(Optional.of(order2));
-        when(orderRepository.findById(3)).thenReturn(Optional.of(order3));
+        // Mock order repository batch loading
+        when(orderRepository.findAllById(orderIds)).thenReturn(orders);
         
-        // Mock trade service responses - all successful
-        String tradeServiceResponse = "{\"id\":99999}";
-        when(restTemplate.postForEntity(anyString(), any(), eq(String.class)))
-            .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body(tradeServiceResponse));
+        // Mock bulk trade service response - all successful
+        BulkTradeOrderResponseDTO bulkResponse = BulkTradeOrderResponseDTO.builder()
+                .status("SUCCESS")
+                .message("All orders processed successfully")
+                .totalRequested(3)
+                .successful(3)
+                .failed(0)
+                .results(Arrays.asList(
+                        TradeOrderResultDTO.success(0, TradeOrderResponseDTO.builder().id(99999).build()),
+                        TradeOrderResultDTO.success(1, TradeOrderResponseDTO.builder().id(99998).build()),
+                        TradeOrderResultDTO.success(2, TradeOrderResponseDTO.builder().id(99997).build())
+                ))
+                .build();
+        
+        when(restTemplate.postForEntity(anyString(), any(), eq(BulkTradeOrderResponseDTO.class)))
+            .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body(bulkResponse));
         
         // Mock status repository for SENT status
         Status sentStatus = Status.builder().id(2).abbreviation("SENT").description("Sent").version(1).build();
         when(statusRepository.findAll()).thenReturn(Arrays.asList(status, sentStatus));
         
         // Mock order save operations
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
         
         // Execute batch submission
         BatchSubmitResponseDTO result = orderService.submitOrdersBatch(orderIds);
@@ -708,15 +746,15 @@ public class OrderServiceTest {
             OrderSubmitResultDTO orderResult = result.getResults().get(i);
             assertEquals("SUCCESS", orderResult.getStatus());
             assertEquals(orderIds.get(i), orderResult.getOrderId());
-            assertEquals(99999, orderResult.getTradeOrderId());
+            assertEquals(99999 - i, orderResult.getTradeOrderId()); // Different trade order IDs
             assertEquals(i, orderResult.getRequestIndex());
             assertEquals("Order submitted successfully", orderResult.getMessage());
         }
         
-        // Verify repository interactions
-        verify(orderRepository, times(3)).findById(anyInt());
-        verify(orderRepository, times(3)).save(any(Order.class));
-        verify(restTemplate, times(3)).postForEntity(anyString(), any(), eq(String.class));
+        // Verify repository interactions - now uses bulk operations
+        verify(orderRepository, times(1)).findAllById(orderIds);
+        verify(orderRepository, times(1)).saveAll(any());
+        verify(restTemplate, times(1)).postForEntity(anyString(), any(), eq(BulkTradeOrderResponseDTO.class));
     }
 
     @Test

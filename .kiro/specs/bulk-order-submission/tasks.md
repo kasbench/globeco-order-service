@@ -41,7 +41,7 @@
   - Write unit tests for response transformation and mapping logic
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 6. Implement batch database update operations
+- [x] 6. Implement batch database update operations
   - Create `updateOrderStatusesFromBulkResponse()` method for efficient batch updates
   - Implement batch status updates for successful orders (set status to "SENT")
   - Update tradeOrderId field for successfully submitted orders
@@ -50,7 +50,7 @@
   - Write unit tests for batch database operations and transaction handling
   - _Requirements: 4.1, 4.2, 4.3_
 
-- [ ] 7. Replace individual submission logic with bulk implementation
+- [x] 7. Replace individual submission logic with bulk implementation
   - Modify `submitOrdersBatch()` method to use new bulk submission approach
   - Remove existing individual processing loop and related methods
   - Remove complex atomic reservation logic (`atomicallyReserveOrderForSubmission`, etc.)

@@ -40,10 +40,9 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Optional;
 import java.util.ArrayList;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.IntStream;
+
+
+
 import java.util.Set;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -61,7 +60,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import java.util.Map;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -84,9 +82,7 @@ public class OrderService {
     private final String tradeServiceUrl;
     private final int tradeServiceTimeout;
 
-    // Semaphore to limit concurrent database operations and prevent connection pool
-    // exhaustion
-    private final Semaphore databaseOperationSemaphore = new Semaphore(25); // Max 25 concurrent DB ops
+
 
     public OrderService(
             OrderRepository orderRepository,
@@ -155,23 +151,15 @@ public class OrderService {
     }
 
     /**
-     * Submit multiple orders in batch to the trade service.
-     * Processes orders individually (non-atomic batch) and continues processing
-     * even if some orders fail. Each order is processed in its own transaction.
+     * Submit multiple orders in batch to the trade service using bulk submission.
+     * This method uses a single bulk API call to the trade service for improved performance,
+     * replacing the previous individual order processing approach.
      * 
      * @param orderIds List of order IDs to submit
      * @return BatchSubmitResponseDTO containing results for each order
      */
     public BatchSubmitResponseDTO submitOrdersBatch(List<Integer> orderIds) {
-        logger.info("Starting batch order submission for {} orders", orderIds.size());
-
-        // Check for duplicate order IDs in the request
-        Set<Integer> uniqueOrderIds = new HashSet<>(orderIds);
-        if (uniqueOrderIds.size() != orderIds.size()) {
-            logger.warn(
-                    "DUPLICATE_TRACKING: Duplicate order IDs detected in batch request! Total: {}, Unique: {}, OrderIds: {}",
-                    orderIds.size(), uniqueOrderIds.size(), orderIds);
-        }
+        logger.info("Starting bulk order submission for {} orders", orderIds.size());
 
         // Validate batch size
         if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
@@ -181,402 +169,65 @@ public class OrderService {
             return BatchSubmitResponseDTO.validationFailure(errorMessage);
         }
 
-        List<OrderSubmitResultDTO> results = new ArrayList<>();
-
-        // Process each order individually in separate transactions
-        for (int i = 0; i < orderIds.size(); i++) {
-            Integer orderId = orderIds.get(i);
-            logger.debug("Processing order {} (index {}) in batch", orderId, i);
-
-            OrderSubmitResultDTO result = submitIndividualOrderInTransaction(orderId, i);
-            results.add(result);
-
-            logger.debug("Order {} processed with status: {}", orderId, result.getStatus());
+        if (orderIds.isEmpty()) {
+            logger.warn("Empty order list provided for bulk submission");
+            return BatchSubmitResponseDTO.validationFailure("No orders provided for submission");
         }
-
-        // Create response based on results
-        BatchSubmitResponseDTO response = BatchSubmitResponseDTO.fromResults(results);
-
-        logger.info("Batch submission completed: {} successful, {} failed out of {} total",
-                response.getSuccessful(), response.getFailed(), response.getTotalRequested());
-
-        return response;
-    }
-
-    /**
-     * Submit multiple orders in batch to the trade service with parallel
-     * processing.
-     * This is an enhanced version that processes orders in parallel for better
-     * performance.
-     * Trade service calls are made concurrently while maintaining individual error
-     * handling.
-     * Each order is processed in its own transaction.
-     * 
-     * @param orderIds List of order IDs to submit
-     * @return BatchSubmitResponseDTO containing results for each order
-     */
-    public BatchSubmitResponseDTO submitOrdersBatchParallel(List<Integer> orderIds) {
-        logger.info("Starting parallel batch order submission for {} orders", orderIds.size());
-
-        // Check for duplicate order IDs in the request
-        Set<Integer> uniqueOrderIds = new HashSet<>(orderIds);
-        if (uniqueOrderIds.size() != orderIds.size()) {
-            logger.warn(
-                    "DUPLICATE_TRACKING: Duplicate order IDs detected in PARALLEL batch request! Total: {}, Unique: {}, OrderIds: {}",
-                    orderIds.size(), uniqueOrderIds.size(), orderIds);
-        }
-
-        // Validate batch size
-        if (orderIds.size() > MAX_SUBMIT_BATCH_SIZE) {
-            String errorMessage = String.format("Batch size %d exceeds maximum allowed size of %d",
-                    orderIds.size(), MAX_SUBMIT_BATCH_SIZE);
-            logger.warn("Parallel batch submission rejected: {}", errorMessage);
-            return BatchSubmitResponseDTO.validationFailure(errorMessage);
-        }
-
-        // Create thread pool for parallel processing
-        ExecutorService executor = Executors.newFixedThreadPool(Math.min(orderIds.size(), 10));
 
         try {
-            // Create CompletableFuture for each order
-            List<CompletableFuture<OrderSubmitResultDTO>> futures = IntStream.range(0, orderIds.size())
-                    .mapToObj(i -> CompletableFuture
-                            .supplyAsync(() -> submitIndividualOrderInTransaction(orderIds.get(i), i), executor))
-                    .toList();
+            // 1. Load and validate orders in batch
+            List<Order> validOrders = loadAndValidateOrdersForBulkSubmission(orderIds);
+            
+            if (validOrders.isEmpty()) {
+                logger.warn("No valid orders found for bulk submission from {} requested orders", orderIds.size());
+                return BatchSubmitResponseDTO.validationFailure("No valid orders found for submission");
+            }
 
-            // Wait for all futures to complete and collect results
-            List<OrderSubmitResultDTO> results = futures.stream()
-                    .map(CompletableFuture::join)
-                    .toList();
+            // 2. Build bulk request
+            BulkTradeOrderRequestDTO bulkRequest = buildBulkTradeOrderRequest(validOrders);
 
-            // Create response based on results
-            BatchSubmitResponseDTO response = BatchSubmitResponseDTO.fromResults(results);
+            // 3. Call trade service bulk endpoint
+            BulkTradeOrderResponseDTO tradeServiceResponse = callTradeServiceBulk(bulkRequest);
 
-            logger.info("Parallel batch submission completed: {} successful, {} failed out of {} total",
+            // 4. Update order statuses in batch
+            updateOrderStatusesFromBulkResponse(validOrders, tradeServiceResponse);
+
+            // 5. Transform response to match existing API contract
+            BatchSubmitResponseDTO response = transformBulkResponseToOrderServiceFormat(tradeServiceResponse, orderIds);
+
+            logger.info("Bulk submission completed: {} successful, {} failed out of {} total",
                     response.getSuccessful(), response.getFailed(), response.getTotalRequested());
 
             return response;
 
-        } finally {
-            executor.shutdown();
-        }
-    }
-
-    /**
-     * Submit a single order as part of batch processing with optimized transaction
-     * management.
-     * This method minimizes database connection holding time by separating database
-     * operations
-     * from external service calls to prevent connection leaks.
-     * 
-     * @param orderId      The ID of the order to submit
-     * @param requestIndex The index of this order in the batch request
-     * @return OrderSubmitResultDTO containing the result of the submission
-     */
-    public OrderSubmitResultDTO submitIndividualOrderInTransaction(Integer orderId, Integer requestIndex) {
-        return submitIndividualOrder(orderId, requestIndex);
-    }
-
-    /**
-     * Submit a single order as part of batch processing with optimized transaction
-     * management.
-     * This method uses atomic reservation to prevent race conditions and duplicate
-     * submissions.
-     * 
-     * @param orderId      The ID of the order to submit
-     * @param requestIndex The index of this order in the batch request
-     * @return OrderSubmitResultDTO containing the result of the submission
-     */
-    private OrderSubmitResultDTO submitIndividualOrder(Integer orderId, Integer requestIndex) {
-        String threadName = Thread.currentThread().getName();
-        long startTime = System.currentTimeMillis();
-
-        logger.info("DUPLICATE_TRACKING: Starting submission for orderId={}, requestIndex={}, thread={}, timestamp={}",
-                orderId, requestIndex, threadName, startTime);
-
-        try {
-            // Step 1: Atomically reserve the order for submission
-            // This prevents race conditions by using database-level atomic operations
-            logger.info("DUPLICATE_TRACKING: Attempting atomic reservation for orderId={}, thread={}", orderId,
-                    threadName);
-            boolean reserved = atomicallyReserveOrderForSubmission(orderId);
-
-            if (!reserved) {
-                logger.warn("DUPLICATE_TRACKING: Failed to reserve order {} - already reserved or invalid, thread={}",
-                        orderId, threadName);
-                return OrderSubmitResultDTO.failure(orderId,
-                        "Order already being processed or not available for submission", requestIndex);
-            }
-
-            logger.info("DUPLICATE_TRACKING: Successfully reserved order {} for submission, thread={}", orderId,
-                    threadName);
-
-            try {
-                // Step 2: Load order details for trade service call
-                Order order = loadAndValidateOrder(orderId);
-                if (order == null) {
-                    logger.warn(
-                            "DUPLICATE_TRACKING: Order {} not found after reservation, releasing reservation, thread={}",
-                            orderId, threadName);
-                    releaseOrderReservation(orderId);
-                    return OrderSubmitResultDTO.failure(orderId, "Order not found", requestIndex);
-                }
-
-                // Step 3: Call trade service WITHOUT holding database connection
-                logger.info("DUPLICATE_TRACKING: Calling trade service for reserved order {}, thread={}", orderId,
-                        threadName);
-                long tradeServiceStart = System.currentTimeMillis();
-                Integer tradeOrderId = callTradeService(order);
-                long tradeServiceEnd = System.currentTimeMillis();
-
-                if (tradeOrderId == null) {
-                    logger.warn(
-                            "DUPLICATE_TRACKING: Trade service call failed for order {}, releasing reservation, thread={}",
-                            orderId, threadName);
-                    releaseOrderReservation(orderId);
-                    return OrderSubmitResultDTO.failure(orderId, "Trade service submission failed", requestIndex);
-                }
-
-                logger.info(
-                        "DUPLICATE_TRACKING: Trade service returned tradeOrderId={} for order {} in {}ms, thread={}",
-                        tradeOrderId, orderId, (tradeServiceEnd - tradeServiceStart), threadName);
-
-                // Step 4: Update the reserved order with the actual trade order ID
-                logger.info("DUPLICATE_TRACKING: Updating reserved order {} with tradeOrderId={}, thread={}",
-                        orderId, tradeOrderId, threadName);
-                boolean updateSuccess = updateReservedOrderWithTradeOrderId(orderId, tradeOrderId);
-
-                if (!updateSuccess) {
-                    logger.error(
-                            "DUPLICATE_TRACKING: Failed to update reserved order {} with tradeOrderId={}, thread={} - THIS SHOULD NOT HAPPEN!",
-                            orderId, tradeOrderId, threadName);
-                    // Don't release reservation here as the order might be in an inconsistent state
-                    return OrderSubmitResultDTO.failure(orderId,
-                            "Failed to update order after successful trade service call", requestIndex);
-                }
-
-                // Step 5: Update order status to SENT
-                updateOrderStatusToSent(orderId);
-
-                long totalTime = System.currentTimeMillis() - startTime;
-                logger.info(
-                        "DUPLICATE_TRACKING: Order {} successfully submitted with tradeOrderId={} in {}ms, thread={}",
-                        orderId, tradeOrderId, totalTime, threadName);
-                return OrderSubmitResultDTO.success(orderId, tradeOrderId, requestIndex);
-
-            } catch (Exception e) {
-                logger.error(
-                        "DUPLICATE_TRACKING: Error during submission of reserved order {}, releasing reservation, thread={}: {}",
-                        orderId, threadName, e.getMessage(), e);
-                releaseOrderReservation(orderId);
-                throw e;
-            }
-
         } catch (Exception e) {
-            logger.error("DUPLICATE_TRACKING: Unexpected error submitting order {} in batch: {}, thread={}",
-                    orderId, e.getMessage(), threadName, e);
-            return OrderSubmitResultDTO.failure(orderId,
-                    "Internal error during submission: " + e.getMessage(), requestIndex);
+            logger.error("Bulk submission failed for {} orders: {}", orderIds.size(), e.getMessage(), e);
+            return BatchSubmitResponseDTO.builder()
+                    .status("FAILURE")
+                    .message("Bulk submission failed: " + e.getMessage())
+                    .totalRequested(orderIds.size())
+                    .successful(0)
+                    .failed(orderIds.size())
+                    .results(orderIds.stream()
+                            .map(orderId -> OrderSubmitResultDTO.failure(orderId, 
+                                    "Bulk submission failed: " + e.getMessage(), 
+                                    orderIds.indexOf(orderId)))
+                            .toList())
+                    .build();
         }
     }
 
-    /**
-     * Load and validate order using manual transaction management with semaphore
-     * protection.
-     * 
-     * @param orderId The order ID to load
-     * @return The order if found and valid, null otherwise
-     */
-    public Order loadAndValidateOrder(Integer orderId) {
-        try {
-            // Acquire semaphore with timeout to prevent indefinite waiting
-            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
-                logger.warn("Database operation semaphore timeout for order {} load", orderId);
-                return null;
-            }
 
-            try {
-                return readOnlyTransactionTemplate.execute(status -> {
-                    try {
-                        return orderRepository.findById(orderId).orElse(null);
-                    } catch (Exception e) {
-                        logger.warn("Failed to load order {}: {}", orderId, e.getMessage());
-                        status.setRollbackOnly();
-                        return null;
-                    }
-                });
-            } finally {
-                databaseOperationSemaphore.release();
-            }
 
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while waiting for database semaphore for order {}", orderId);
-            return null;
-        }
-    }
 
-    /**
-     * Atomically reserve an order for submission by setting a processing flag.
-     * This prevents race conditions by using database-level atomic operations.
-     * 
-     * @param orderId The order ID to reserve
-     * @return true if successfully reserved, false if already reserved or invalid
-     */
-    public boolean atomicallyReserveOrderForSubmission(Integer orderId) {
-        String threadName = Thread.currentThread().getName();
 
-        try {
-            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
-                logger.warn("Database operation semaphore timeout for order {} reservation", orderId);
-                return false;
-            }
 
-            try {
-                Boolean result = transactionTemplate.execute(status -> {
-                    try {
-                        logger.info(
-                                "DUPLICATE_TRACKING: Attempting atomic reservation for orderId={} (will use -{} as reservation value), thread={}",
-                                orderId, orderId, threadName);
 
-                        // Use a custom query to atomically check and update
-                        // This will only update if status='NEW' AND tradeOrderId IS NULL
-                        // Sets tradeOrderId to negative order ID to ensure uniqueness
-                        int updatedRows = orderRepository.atomicallyReserveForSubmission(orderId);
 
-                        boolean success = updatedRows > 0;
-                        logger.info(
-                                "DUPLICATE_TRACKING: Atomic reservation for orderId={}, success={}, updatedRows={}, reservationValue={}, thread={}",
-                                orderId, success, updatedRows, success ? -orderId : "N/A", threadName);
 
-                        return success;
 
-                    } catch (Exception e) {
-                        logger.error("DUPLICATE_TRACKING: Failed to atomically reserve order {} - {}, thread={}",
-                                orderId, e.getMessage(), threadName);
-                        status.setRollbackOnly();
-                        return false;
-                    }
-                });
 
-                return result != null ? result : false;
 
-            } finally {
-                databaseOperationSemaphore.release();
-            }
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while waiting for database semaphore for order {} reservation", orderId);
-            return false;
-        }
-    }
-
-    /**
-     * Update order status after successful trade service submission using manual
-     * transaction management
-     * with semaphore protection to prevent connection pool exhaustion.
-     * Uses optimistic locking to prevent race conditions.
-     * 
-     * @param orderId      The order ID to update
-     * @param tradeOrderId The trade order ID from the trade service
-     * @return true if update was successful, false otherwise
-     */
-    public boolean updateOrderAfterSubmissionSafe(Integer orderId, Integer tradeOrderId) {
-        String threadName = Thread.currentThread().getName();
-        long updateStart = System.currentTimeMillis();
-
-        logger.info("DUPLICATE_TRACKING: Starting database update for orderId={}, tradeOrderId={}, thread={}",
-                orderId, tradeOrderId, threadName);
-
-        try {
-            // Acquire semaphore with timeout to prevent indefinite waiting
-            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
-                logger.warn("Database operation semaphore timeout for order {} update", orderId);
-                return false;
-            }
-
-            try {
-                Boolean result = transactionTemplate.execute(status -> {
-                    try {
-                        logger.info(
-                                "DUPLICATE_TRACKING: Inside transaction - re-loading order {} for update, thread={}",
-                                orderId, threadName);
-
-                        // Re-load the order to ensure we have the latest version
-                        Optional<Order> orderOpt = orderRepository.findById(orderId);
-                        if (orderOpt.isEmpty()) {
-                            logger.warn("Order {} not found during status update", orderId);
-                            return false;
-                        }
-
-                        Order order = orderOpt.get();
-
-                        logger.info(
-                                "DUPLICATE_TRACKING: Re-loaded order {} - status={}, existing_tradeOrderId={}, new_tradeOrderId={}, thread={}",
-                                orderId, order.getStatus().getAbbreviation(), order.getTradeOrderId(), tradeOrderId,
-                                threadName);
-
-                        // CRITICAL: Check both status AND that tradeOrderId is not already set
-                        // This prevents duplicate processing even if status hasn't changed yet
-                        if (!"NEW".equals(order.getStatus().getAbbreviation())) {
-                            logger.warn(
-                                    "DUPLICATE_TRACKING: Order {} status changed during processing (current: {}), thread={} - RACE CONDITION!",
-                                    orderId, order.getStatus().getAbbreviation(), threadName);
-                            return false;
-                        }
-
-                        if (order.getTradeOrderId() != null) {
-                            logger.warn(
-                                    "DUPLICATE_TRACKING: Order {} already has tradeOrderId {} - preventing duplicate submission, thread={} - RACE CONDITION!",
-                                    orderId, order.getTradeOrderId(), threadName);
-                            return false;
-                        }
-
-                        logger.info("DUPLICATE_TRACKING: Proceeding with order {} update, thread={}", orderId,
-                                threadName);
-                        updateOrderAfterSubmission(order, tradeOrderId);
-                        logger.info("DUPLICATE_TRACKING: Order {} update completed successfully, thread={}", orderId,
-                                threadName);
-                        return true;
-
-                    } catch (org.springframework.dao.OptimisticLockingFailureException e) {
-                        logger.warn(
-                                "DUPLICATE_TRACKING: Optimistic locking failure for order {} - another thread updated it, thread={}",
-                                orderId, threadName);
-                        status.setRollbackOnly();
-                        return false;
-                    } catch (org.springframework.dao.DataIntegrityViolationException e) {
-                        logger.warn(
-                                "DUPLICATE_TRACKING: Data integrity violation for order {} - likely duplicate key: {}, thread={}",
-                                orderId, e.getMessage(), threadName);
-                        status.setRollbackOnly();
-                        return false;
-                    } catch (Exception e) {
-                        logger.error("DUPLICATE_TRACKING: Failed to update order {} after submission: {}, thread={}",
-                                orderId, e.getMessage(), threadName, e);
-                        status.setRollbackOnly();
-                        return false;
-                    }
-                });
-
-                long updateEnd = System.currentTimeMillis();
-                logger.info(
-                        "DUPLICATE_TRACKING: Database update completed for orderId={}, success={}, duration={}ms, thread={}",
-                        orderId, (result != null ? result : false), (updateEnd - updateStart), threadName);
-
-                return result != null ? result : false;
-
-            } finally {
-                databaseOperationSemaphore.release();
-            }
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while waiting for database semaphore for order {} update", orderId);
-            return false;
-        }
-    }
 
     /**
      * Call the trade service to submit an order.
@@ -695,95 +346,7 @@ public class OrderService {
         return cachedSentStatus;
     }
 
-    /**
-     * Update a reserved order with the actual trade order ID from the trade
-     * service.
-     * 
-     * @param orderId      The order ID to update
-     * @param tradeOrderId The actual trade order ID
-     * @return true if successful, false otherwise
-     */
-    private boolean updateReservedOrderWithTradeOrderId(Integer orderId, Integer tradeOrderId) {
-        String threadName = Thread.currentThread().getName();
 
-        try {
-            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
-                logger.warn("Database operation semaphore timeout for order {} trade ID update", orderId);
-                return false;
-            }
-
-            try {
-                Boolean result = transactionTemplate.execute(status -> {
-                    try {
-                        int updatedRows = orderRepository.updateReservedOrderWithTradeOrderId(orderId, tradeOrderId);
-                        logger.info(
-                                "DUPLICATE_TRACKING: Updated reserved order {} with tradeOrderId={}, updatedRows={}, thread={}",
-                                orderId, tradeOrderId, updatedRows, threadName);
-                        return updatedRows > 0;
-                    } catch (Exception e) {
-                        logger.error(
-                                "DUPLICATE_TRACKING: Failed to update reserved order {} with tradeOrderId={}, thread={}: {}",
-                                orderId, tradeOrderId, threadName, e.getMessage());
-                        status.setRollbackOnly();
-                        return false;
-                    }
-                });
-
-                return result != null ? result : false;
-
-            } finally {
-                databaseOperationSemaphore.release();
-            }
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while waiting for database semaphore for order {} trade ID update", orderId);
-            return false;
-        }
-    }
-
-    /**
-     * Release a reserved order back to available state if submission fails.
-     * 
-     * @param orderId The order ID to release
-     * @return true if successful, false otherwise
-     */
-    private boolean releaseOrderReservation(Integer orderId) {
-        String threadName = Thread.currentThread().getName();
-
-        try {
-            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
-                logger.warn("Database operation semaphore timeout for order {} reservation release", orderId);
-                return false;
-            }
-
-            try {
-                Boolean result = transactionTemplate.execute(status -> {
-                    try {
-                        int updatedRows = orderRepository.releaseReservedOrder(orderId);
-                        logger.info("DUPLICATE_TRACKING: Released reservation for order {}, updatedRows={}, thread={}",
-                                orderId, updatedRows, threadName);
-                        return updatedRows > 0;
-                    } catch (Exception e) {
-                        logger.error("DUPLICATE_TRACKING: Failed to release reservation for order {}, thread={}: {}",
-                                orderId, threadName, e.getMessage());
-                        status.setRollbackOnly();
-                        return false;
-                    }
-                });
-
-                return result != null ? result : false;
-
-            } finally {
-                databaseOperationSemaphore.release();
-            }
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while waiting for database semaphore for order {} reservation release", orderId);
-            return false;
-        }
-    }
 
     /**
      * Load and validate orders for bulk submission.
@@ -800,47 +363,29 @@ public class OrderService {
         
         logger.info("Loading and validating {} orders for bulk submission", orderIds.size());
 
-        try {
-            // Acquire semaphore to prevent database connection exhaustion
-            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
-                logger.warn("Database operation semaphore timeout for bulk order loading");
+        return readOnlyTransactionTemplate.execute(status -> {
+            try {
+                // Batch load all orders using findAllById for efficiency
+                List<Order> allOrders = orderRepository.findAllById(orderIds);
+                logger.debug("Loaded {} orders from database out of {} requested", 
+                        allOrders.size(), orderIds.size());
+
+                // Filter orders for bulk submission eligibility
+                List<Order> validOrders = allOrders.stream()
+                        .filter(this::isOrderValidForBulkSubmission)
+                        .toList();
+
+                logger.info("Validated {} orders out of {} loaded for bulk submission", 
+                        validOrders.size(), allOrders.size());
+
+                return validOrders;
+
+            } catch (Exception e) {
+                logger.error("Failed to load and validate orders for bulk submission: {}", e.getMessage(), e);
+                status.setRollbackOnly();
                 return new ArrayList<>();
             }
-
-            try {
-                return readOnlyTransactionTemplate.execute(status -> {
-                    try {
-                        // Batch load all orders using findAllById for efficiency
-                        List<Order> allOrders = orderRepository.findAllById(orderIds);
-                        logger.debug("Loaded {} orders from database out of {} requested", 
-                                allOrders.size(), orderIds.size());
-
-                        // Filter orders for bulk submission eligibility
-                        List<Order> validOrders = allOrders.stream()
-                                .filter(this::isOrderValidForBulkSubmission)
-                                .toList();
-
-                        logger.info("Validated {} orders out of {} loaded for bulk submission", 
-                                validOrders.size(), allOrders.size());
-
-                        return validOrders;
-
-                    } catch (Exception e) {
-                        logger.error("Failed to load and validate orders for bulk submission: {}", e.getMessage(), e);
-                        status.setRollbackOnly();
-                        return new ArrayList<>();
-                    }
-                });
-
-            } finally {
-                databaseOperationSemaphore.release();
-            }
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while waiting for database semaphore for bulk order loading");
-            return new ArrayList<>();
-        }
+        });
     }
 
     /**
@@ -938,69 +483,12 @@ public class OrderService {
         return true;
     }
 
-    /**
-     * Update order status to SENT after successful submission.
-     * 
-     * @param orderId The order ID to update
-     */
-    private void updateOrderStatusToSent(Integer orderId) {
-        String threadName = Thread.currentThread().getName();
 
-        try {
-            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
-                logger.warn("Database operation semaphore timeout for order {} status update", orderId);
-                return;
-            }
-
-            try {
-                transactionTemplate.execute(status -> {
-                    try {
-                        Optional<Order> orderOpt = orderRepository.findById(orderId);
-                        if (orderOpt.isPresent()) {
-                            Order order = orderOpt.get();
-                            Status sentStatus = getSentStatus();
-
-                            Order updatedOrder = Order.builder()
-                                    .id(order.getId())
-                                    .blotter(order.getBlotter())
-                                    .status(sentStatus)
-                                    .portfolioId(order.getPortfolioId())
-                                    .orderType(order.getOrderType())
-                                    .securityId(order.getSecurityId())
-                                    .quantity(order.getQuantity())
-                                    .limitPrice(order.getLimitPrice())
-                                    .tradeOrderId(order.getTradeOrderId())
-                                    .orderTimestamp(order.getOrderTimestamp())
-                                    .version(order.getVersion())
-                                    .build();
-
-                            orderRepository.save(updatedOrder);
-                            logger.info("DUPLICATE_TRACKING: Updated order {} status to SENT, thread={}", orderId,
-                                    threadName);
-                        }
-                        return null;
-                    } catch (Exception e) {
-                        logger.error("DUPLICATE_TRACKING: Failed to update order {} status to SENT, thread={}: {}",
-                                orderId, threadName, e.getMessage());
-                        status.setRollbackOnly();
-                        return null;
-                    }
-                });
-
-            } finally {
-                databaseOperationSemaphore.release();
-            }
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while waiting for database semaphore for order {} status update", orderId);
-        }
-    }
 
     /**
      * Update order statuses from bulk response using efficient batch operations.
      * Handles partial success scenarios where some orders succeed and others fail.
-     * Uses batch update operations to minimize database connections.
+     * Uses simplified transaction management for improved performance.
      * 
      * @param orders List of orders that were submitted in the bulk request
      * @param bulkResponse The bulk response from the trade service
@@ -1015,99 +503,82 @@ public class OrderService {
         logger.info("Updating order statuses from bulk response: {} orders, {} results", 
                 orders.size(), bulkResponse.getResults() != null ? bulkResponse.getResults().size() : 0);
 
-        try {
-            // Acquire semaphore to prevent database connection exhaustion
-            if (!databaseOperationSemaphore.tryAcquire(5, TimeUnit.SECONDS)) {
-                logger.error("Database operation semaphore timeout for bulk status update");
-                return;
-            }
-
+        transactionTemplate.execute(status -> {
             try {
-                transactionTemplate.execute(status -> {
-                    try {
-                        // Create maps for efficient lookups
-                        Map<Integer, Order> orderMap = orders.stream()
-                                .collect(HashMap::new, (map, order) -> map.put(order.getId(), order), HashMap::putAll);
-                        
-                        Map<Integer, TradeOrderResultDTO> resultMap = new HashMap<>();
-                        if (bulkResponse.getResults() != null) {
-                            for (TradeOrderResultDTO result : bulkResponse.getResults()) {
-                                if (result.getRequestIndex() != null && result.getRequestIndex() < orders.size()) {
-                                    Order order = orders.get(result.getRequestIndex());
-                                    if (order != null) {
-                                        resultMap.put(order.getId(), result);
-                                    }
-                                }
+                // Create maps for efficient lookups
+                Map<Integer, Order> orderMap = orders.stream()
+                        .collect(HashMap::new, (map, order) -> map.put(order.getId(), order), HashMap::putAll);
+                
+                Map<Integer, TradeOrderResultDTO> resultMap = new HashMap<>();
+                if (bulkResponse.getResults() != null) {
+                    for (TradeOrderResultDTO result : bulkResponse.getResults()) {
+                        if (result.getRequestIndex() != null && result.getRequestIndex() < orders.size()) {
+                            Order order = orders.get(result.getRequestIndex());
+                            if (order != null) {
+                                resultMap.put(order.getId(), result);
                             }
                         }
-
-                        // Get SENT status once for all successful updates
-                        Status sentStatus = getSentStatus();
-                        
-                        // Track successful and failed updates
-                        List<Order> successfulOrders = new ArrayList<>();
-                        List<Order> failedOrders = new ArrayList<>();
-                        
-                        // Process each order based on its result
-                        for (Order order : orders) {
-                            TradeOrderResultDTO result = resultMap.get(order.getId());
-                            
-                            if (result != null && result.isSuccess() && result.getTradeOrderId() != null) {
-                                // Order was successfully processed by trade service
-                                Order updatedOrder = Order.builder()
-                                        .id(order.getId())
-                                        .blotter(order.getBlotter())
-                                        .status(sentStatus)
-                                        .portfolioId(order.getPortfolioId())
-                                        .orderType(order.getOrderType())
-                                        .securityId(order.getSecurityId())
-                                        .quantity(order.getQuantity())
-                                        .limitPrice(order.getLimitPrice())
-                                        .tradeOrderId(result.getTradeOrderId())
-                                        .orderTimestamp(order.getOrderTimestamp())
-                                        .version(order.getVersion())
-                                        .build();
-                                
-                                successfulOrders.add(updatedOrder);
-                                logger.debug("Prepared order {} for successful update with tradeOrderId {}", 
-                                        order.getId(), result.getTradeOrderId());
-                            } else {
-                                // Order failed or no result found - leave in NEW status
-                                failedOrders.add(order);
-                                String failureReason = result != null ? result.getMessage() : "No result found in bulk response";
-                                logger.debug("Order {} failed in bulk submission: {}", order.getId(), failureReason);
-                            }
-                        }
-                        
-                        // Perform batch updates for successful orders
-                        if (!successfulOrders.isEmpty()) {
-                            logger.info("Performing batch update for {} successful orders", successfulOrders.size());
-                            orderRepository.saveAll(successfulOrders);
-                            logger.info("Successfully updated {} orders to SENT status with trade order IDs", 
-                                    successfulOrders.size());
-                        }
-                        
-                        // Log summary of batch update operation
-                        logger.info("Bulk status update completed: {} successful, {} failed out of {} total orders", 
-                                successfulOrders.size(), failedOrders.size(), orders.size());
-                        
-                        return null;
-                        
-                    } catch (Exception e) {
-                        logger.error("Failed to update order statuses from bulk response: {}", e.getMessage(), e);
-                        status.setRollbackOnly();
-                        throw new RuntimeException("Bulk status update failed", e);
                     }
-                });
+                }
 
-            } finally {
-                databaseOperationSemaphore.release();
+                // Get SENT status once for all successful updates
+                Status sentStatus = getSentStatus();
+                
+                // Track successful and failed updates
+                List<Order> successfulOrders = new ArrayList<>();
+                List<Order> failedOrders = new ArrayList<>();
+                
+                // Process each order based on its result
+                for (Order order : orders) {
+                    TradeOrderResultDTO result = resultMap.get(order.getId());
+                    
+                    if (result != null && result.isSuccess() && result.getTradeOrderId() != null) {
+                        // Order was successfully processed by trade service
+                        Order updatedOrder = Order.builder()
+                                .id(order.getId())
+                                .blotter(order.getBlotter())
+                                .status(sentStatus)
+                                .portfolioId(order.getPortfolioId())
+                                .orderType(order.getOrderType())
+                                .securityId(order.getSecurityId())
+                                .quantity(order.getQuantity())
+                                .limitPrice(order.getLimitPrice())
+                                .tradeOrderId(result.getTradeOrderId())
+                                .orderTimestamp(order.getOrderTimestamp())
+                                .version(order.getVersion())
+                                .build();
+                        
+                        successfulOrders.add(updatedOrder);
+                        logger.debug("Prepared order {} for successful update with tradeOrderId {}", 
+                                order.getId(), result.getTradeOrderId());
+                    } else {
+                        // Order failed or no result found - leave in NEW status
+                        failedOrders.add(order);
+                        String failureReason = result != null ? result.getMessage() : "No result found in bulk response";
+                        logger.debug("Order {} failed in bulk submission: {}", order.getId(), failureReason);
+                    }
+                }
+                
+                // Perform batch updates for successful orders
+                if (!successfulOrders.isEmpty()) {
+                    logger.info("Performing batch update for {} successful orders", successfulOrders.size());
+                    orderRepository.saveAll(successfulOrders);
+                    logger.info("Successfully updated {} orders to SENT status with trade order IDs", 
+                            successfulOrders.size());
+                }
+                
+                // Log summary of batch update operation
+                logger.info("Bulk status update completed: {} successful, {} failed out of {} total orders", 
+                        successfulOrders.size(), failedOrders.size(), orders.size());
+                
+                return null;
+                
+            } catch (Exception e) {
+                logger.error("Failed to update order statuses from bulk response: {}", e.getMessage(), e);
+                status.setRollbackOnly();
+                throw new RuntimeException("Bulk status update failed", e);
             }
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.error("Interrupted while waiting for database semaphore for bulk status update");
-        }
+        });
     }
 
     // Complete mapping from Order to OrderWithDetailsDTO
