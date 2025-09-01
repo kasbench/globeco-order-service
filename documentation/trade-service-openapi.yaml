@@ -853,6 +853,36 @@
         }
       }
     },
+    "/api/v1/tradeOrders/bulk": {
+      "post": {
+        "tags": [
+          "trade-order-controller"
+        ],
+        "operationId": "createTradeOrdersBulk",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkTradeOrderRequestDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkTradeOrderResponseDTO"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tradeOrders/batch/submit": {
       "post": {
         "tags": [
@@ -2136,6 +2166,77 @@
           "destinationId": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "BulkTradeOrderRequestDTO": {
+        "type": "object",
+        "properties": {
+          "tradeOrders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TradeOrderPostDTO"
+            },
+            "maxItems": 1000,
+            "minItems": 1
+          }
+        },
+        "required": [
+          "tradeOrders"
+        ]
+      },
+      "BulkTradeOrderResponseDTO": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "FAILURE"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "totalRequested": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "successful": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TradeOrderResultDTO"
+            }
+          }
+        }
+      },
+      "TradeOrderResultDTO": {
+        "type": "object",
+        "properties": {
+          "requestIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "FAILURE"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "tradeOrder": {
+            "$ref": "#/components/schemas/TradeOrderResponseDTO"
           }
         }
       },
