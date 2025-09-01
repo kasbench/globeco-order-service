@@ -44,7 +44,7 @@ import java.util.stream.IntStream;
 import java.util.Set;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.ArrayList;
+import java.math.BigDecimal;
 import org.kasbench.globeco_order_service.service.SecurityCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioCacheService;
 import org.kasbench.globeco_order_service.service.PortfolioServiceClient;
@@ -779,6 +779,159 @@ public class OrderService {
             logger.warn("Interrupted while waiting for database semaphore for order {} reservation release", orderId);
             return false;
         }
+    }
+
+    /**
+     * Load and validate orders for bulk submission.
+     * Efficiently loads orders in batch and filters them for bulk submission eligibility.
+     * 
+     * @param orderIds List of order IDs to load and validate
+     * @return List of valid orders ready for bulk submission
+     */
+    public List<Order> loadAndValidateOrdersForBulkSubmission(List<Integer> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            logger.warn("Empty or null order IDs list provided for bulk submission");
+            return new ArrayList<>();
+        }
+        
+        logger.info("Loading and validating {} orders for bulk submission", orderIds.size());
+
+        try {
+            // Acquire semaphore to prevent database connection exhaustion
+            if (!databaseOperationSemaphore.tryAcquire(2, TimeUnit.SECONDS)) {
+                logger.warn("Database operation semaphore timeout for bulk order loading");
+                return new ArrayList<>();
+            }
+
+            try {
+                return readOnlyTransactionTemplate.execute(status -> {
+                    try {
+                        // Batch load all orders using findAllById for efficiency
+                        List<Order> allOrders = orderRepository.findAllById(orderIds);
+                        logger.debug("Loaded {} orders from database out of {} requested", 
+                                allOrders.size(), orderIds.size());
+
+                        // Filter orders for bulk submission eligibility
+                        List<Order> validOrders = allOrders.stream()
+                                .filter(this::isOrderValidForBulkSubmission)
+                                .toList();
+
+                        logger.info("Validated {} orders out of {} loaded for bulk submission", 
+                                validOrders.size(), allOrders.size());
+
+                        return validOrders;
+
+                    } catch (Exception e) {
+                        logger.error("Failed to load and validate orders for bulk submission: {}", e.getMessage(), e);
+                        status.setRollbackOnly();
+                        return new ArrayList<>();
+                    }
+                });
+
+            } finally {
+                databaseOperationSemaphore.release();
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for database semaphore for bulk order loading");
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Validate if an order is eligible for bulk submission.
+     * Checks status, required fields, and processing state.
+     * 
+     * @param order The order to validate
+     * @return true if order is valid for bulk submission, false otherwise
+     */
+    private boolean isOrderValidForBulkSubmission(Order order) {
+        if (order == null) {
+            logger.debug("Order is null - invalid for bulk submission");
+            return false;
+        }
+
+        // Check if order is in NEW status
+        if (order.getStatus() == null || !"NEW".equals(order.getStatus().getAbbreviation())) {
+            logger.debug("Order {} has invalid status '{}' - must be 'NEW' for bulk submission", 
+                    order.getId(), order.getStatus() != null ? order.getStatus().getAbbreviation() : "null");
+            return false;
+        }
+
+        // Check if order is already processed (has tradeOrderId)
+        if (order.getTradeOrderId() != null) {
+            logger.debug("Order {} already has tradeOrderId {} - already processed", 
+                    order.getId(), order.getTradeOrderId());
+            return false;
+        }
+
+        // Validate required fields for trade service submission
+        if (!hasRequiredFieldsForTradeService(order)) {
+            logger.debug("Order {} missing required fields for trade service submission", order.getId());
+            return false;
+        }
+
+        logger.debug("Order {} is valid for bulk submission", order.getId());
+        return true;
+    }
+
+    /**
+     * Validate that an order has all required fields for trade service submission.
+     * Checks all mandatory fields needed by the trade service bulk API.
+     * 
+     * @param order The order to validate
+     * @return true if all required fields are present and valid, false otherwise
+     */
+    private boolean hasRequiredFieldsForTradeService(Order order) {
+        if (order == null) {
+            return false;
+        }
+
+        // Check portfolioId
+        if (order.getPortfolioId() == null || order.getPortfolioId().trim().isEmpty()) {
+            logger.debug("Order {} missing portfolioId", order.getId());
+            return false;
+        }
+
+        // Check orderType
+        if (order.getOrderType() == null || order.getOrderType().getAbbreviation() == null || 
+            order.getOrderType().getAbbreviation().trim().isEmpty()) {
+            logger.debug("Order {} missing or invalid orderType", order.getId());
+            return false;
+        }
+
+        // Check securityId
+        if (order.getSecurityId() == null || order.getSecurityId().trim().isEmpty()) {
+            logger.debug("Order {} missing securityId", order.getId());
+            return false;
+        }
+
+        // Check quantity (must be positive)
+        if (order.getQuantity() == null || order.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            logger.debug("Order {} has invalid quantity: {}", order.getId(), order.getQuantity());
+            return false;
+        }
+
+        // Check limitPrice (must be positive)
+        if (order.getLimitPrice() == null || order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            logger.debug("Order {} has invalid limitPrice: {}", order.getId(), order.getLimitPrice());
+            return false;
+        }
+
+        // Check orderTimestamp
+        if (order.getOrderTimestamp() == null) {
+            logger.debug("Order {} missing orderTimestamp", order.getId());
+            return false;
+        }
+
+        // Check blotter (required for blotterId)
+        if (order.getBlotter() == null || order.getBlotter().getId() == null) {
+            logger.debug("Order {} missing blotter or blotter ID", order.getId());
+            return false;
+        }
+
+        return true;
     }
 
     /**

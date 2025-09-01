@@ -7,7 +7,7 @@
   - Add proper validation annotations and builder patterns for all DTOs
   - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 2. Implement order validation and batch loading methods
+- [x] 2. Implement order validation and batch loading methods
   - Create `loadAndValidateOrdersForBulkSubmission()` method in OrderService
   - Implement batch loading of orders using `findAllById()` for efficiency
   - Add validation logic to filter orders in "NEW" status and exclude already processed orders
