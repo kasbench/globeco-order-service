@@ -22,6 +22,9 @@ import org.kasbench.globeco_order_service.service.SecurityServiceClient;
 import org.kasbench.globeco_order_service.service.ValidationCacheService;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.mockito.Mock;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.Counter;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -85,6 +88,13 @@ public class OrderServiceTest {
                 .build();
         
         // Manually create OrderService with mocked dependencies
+        MeterRegistry meterRegistry = mock(MeterRegistry.class);
+        BulkSubmissionPerformanceMonitor performanceMonitor = mock(BulkSubmissionPerformanceMonitor.class);
+        
+        // Mock the meter registry to return mock timers and counters
+        when(meterRegistry.timer(any(String.class))).thenReturn(mock(Timer.class));
+        when(meterRegistry.counter(any(String.class))).thenReturn(mock(Counter.class));
+        
         orderService = new OrderService(
                 orderRepository,
                 statusRepository,
@@ -96,8 +106,9 @@ public class OrderServiceTest {
                 portfolioServiceClient,
                 securityServiceClient,
                 transactionManager,
-                "http://test-trade-service:8082",
-                5000
+                meterRegistry,
+                performanceMonitor,
+                "http://test-trade-service:8082"
         );
         
         // Set the validation cache service using reflection since it's @Autowired
