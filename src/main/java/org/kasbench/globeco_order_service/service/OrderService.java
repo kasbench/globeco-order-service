@@ -760,8 +760,8 @@ public class OrderService {
             return false;
         }
 
-        // Check limitPrice (must be positive)
-        if (order.getLimitPrice() == null || order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+        // Check limitPrice (must be null or positive)
+        if (order.getLimitPrice() != null && order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
             logger.debug("Order {} has invalid limitPrice: {}", order.getId(), order.getLimitPrice());
             return false;
         }
@@ -872,8 +872,8 @@ public class OrderService {
             throw new IllegalArgumentException("Quantity must be positive for order " + order.getId());
         }
 
-        if (order.getLimitPrice() == null || order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Limit price must be positive for order " + order.getId());
+        if (order.getLimitPrice() != null && order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Limit price must be null or positive for order " + order.getId());
         }
 
         if (order.getOrderTimestamp() == null) {
