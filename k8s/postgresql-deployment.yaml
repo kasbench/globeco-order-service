@@ -17,7 +17,7 @@ metadata:
   name: globeco-order-service-postgresql
   namespace: globeco
 spec:
-  serviceName: globeco-order-servicepostgresql-headless
+  serviceName: globeco-order-service-postgresql-headless
   replicas: 1
   selector:
     matchLabels:
@@ -60,6 +60,9 @@ spec:
   volumeClaimTemplates:
     - metadata:
         name: globeco-order-service-postgresdb-storage
+        labels:
+          app: order-service-postgres
+          type: local
       spec:
         accessModes: [ "ReadWriteOnce" ]
         storageClassName: local-storage
