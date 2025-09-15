@@ -41,7 +41,7 @@ public class HttpMetricsService {
 
     public HttpMetricsService(MeterRegistry meterRegistry,
             @Autowired(required = false) PoolingHttpClientConnectionManager connectionManager) {
-        logger.info("HttpMetricsService constructor called - MeterRegistry: {}, ConnectionManager: {}",
+        logger.debug("HttpMetricsService constructor called - MeterRegistry: {}, ConnectionManager: {}",
                 meterRegistry != null ? meterRegistry.getClass().getSimpleName() : "null",
                 connectionManager != null ? "available" : "null");
 
@@ -55,7 +55,7 @@ public class HttpMetricsService {
             return t;
         });
 
-        logger.info("HttpMetricsService constructor completed successfully");
+        logger.debug("HttpMetricsService constructor completed successfully");
     }
 
     /**
@@ -169,7 +169,7 @@ public class HttpMetricsService {
      * This method can be called to update the metrics values.
      */
     public void updateConnectionPoolMetrics(String serviceName, int total, int active, int idle) {
-        logger.info("Updating HTTP connection pool metrics for service: {} - Total: {}, Active: {}, Idle: {}",
+        logger.debug("Updating HTTP connection pool metrics for service: {} - Total: {}, Active: {}, Idle: {}",
                 serviceName, total, active, idle);
         HttpConnectionPoolMetrics metrics = serviceMetrics.get(serviceName);
         if (metrics != null) {
@@ -188,9 +188,9 @@ public class HttpMetricsService {
      * and updates the metrics for all registered services.
      */
     public void updateConnectionPoolMetricsFromManager() {
-        logger.error("=== updateConnectionPoolMetricsFromManager() called ===");
-        logger.info("Updating HTTP connection pool metrics from manager");
-        logger.info("Registered services count: {}", serviceMetrics.size());
+        logger.debug("=== updateConnectionPoolMetricsFromManager() called ===");
+        logger.debug("Updating HTTP connection pool metrics from manager");
+        logger.debug("Registered services count: {}", serviceMetrics.size());
 
         if (connectionManager == null) {
             logger.error("Connection manager not available, using default values for HTTP metrics");
@@ -237,8 +237,8 @@ public class HttpMetricsService {
      * This provides a fallback mechanism to ensure metrics are still populated.
      */
     private void updateWithDefaultValues() {
-        logger.error("=== updateWithDefaultValues() called ===");
-        logger.info("Updating {} services with default values", serviceMetrics.size());
+        logger.debug("=== updateWithDefaultValues() called ===");
+        logger.debug("Updating {} services with default values", serviceMetrics.size());
 
         try {
             for (String serviceName : serviceMetrics.keySet()) {
@@ -249,7 +249,7 @@ public class HttpMetricsService {
                     metrics.setActiveConnections(0); // No active connections when manager unavailable
                     metrics.setIdleConnections(0); // No idle connections when manager unavailable
 
-                    logger.error(
+                    logger.info(
                             "Updated HTTP connection pool metrics for service: {} with default values - Total: {}, Active: {}, Idle: {}",
                             serviceName, 20, 0, 0);
                 }
@@ -319,7 +319,7 @@ public class HttpMetricsService {
      * connection usage.
      */
     public void updateServiceSpecificMetrics(String serviceName, String serviceUrl) {
-        logger.info("Updating service-specific metrics for service: {}", serviceName);
+        logger.debug("Updating service-specific metrics for service: {}", serviceName);
         if (connectionManager == null || serviceName == null || serviceUrl == null) {
             logger.error("Cannot update service-specific metrics: missing connection manager or service info");
             return;
@@ -346,7 +346,7 @@ public class HttpMetricsService {
             metrics.setActiveConnections(routeStats.getLeased());
             metrics.setIdleConnections(Math.max(0, routeStats.getAvailable() - routeStats.getPending()));
 
-            logger.info("Updated service-specific HTTP metrics for {}: Total: {}, Active: {}, Idle: {}",
+            logger.debug("Updated service-specific HTTP metrics for {}: Total: {}, Active: {}, Idle: {}",
                     serviceName, maxPerRoute, routeStats.getLeased(),
                     Math.max(0, routeStats.getAvailable() - routeStats.getPending()));
 
@@ -388,7 +388,7 @@ public class HttpMetricsService {
      * This method is useful for testing and debugging purposes.
      */
     public void forceMetricsUpdate() {
-        logger.info("Forcing immediate HTTP metrics update");
+        logger.debug("Forcing immediate HTTP metrics update");
         updateConnectionPoolMetricsFromManager();
     }
 
@@ -398,7 +398,7 @@ public class HttpMetricsService {
      * initialization.
      */
     public void initializeHttpMetrics() {
-        logger.error("=== HttpMetricsService initializeHttpMetrics() method called ===");
+        logger.debug("=== HttpMetricsService initializeHttpMetrics() method called ===");
         logger.info("HttpMetricsService initialized and ready to register HTTP connection pool metrics");
         logger.info("Connection manager available: {}", connectionManager != null);
         logger.info("MeterRegistry available: {}", meterRegistry != null);
@@ -409,7 +409,7 @@ public class HttpMetricsService {
                 30, // Update every 30 seconds
                 TimeUnit.SECONDS);
 
-        logger.error("=== HTTP metrics periodic update task started (30 second interval) ===");
+        logger.debug("=== HTTP metrics periodic update task started (30 second interval) ===");
     }
 
     @PreDestroy

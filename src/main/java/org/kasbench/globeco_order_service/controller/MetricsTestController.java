@@ -25,10 +25,10 @@ public class MetricsTestController {
     
     @Autowired
     public MetricsTestController(@Autowired(required = false) HttpMetricsService httpMetricsService) {
-        logger.error("=== MetricsTestController constructor called ===");
+        logger.debug("=== MetricsTestController constructor called ===");
         logger.info("HttpMetricsService available: {}", httpMetricsService != null);
         this.httpMetricsService = httpMetricsService;
-        logger.error("=== MetricsTestController constructor completed ===");
+        logger.debug("=== MetricsTestController constructor completed ===");
     }
     
     /**
@@ -36,7 +36,7 @@ public class MetricsTestController {
      */
     @GetMapping("/http-status")
     public ResponseEntity<String> getHttpMetricsStatus() {
-        logger.error("=== HTTP metrics status endpoint called ===");
+        logger.debug("=== HTTP metrics status endpoint called ===");
         
         if (httpMetricsService == null) {
             logger.error("HttpMetricsService is NULL in test controller");
@@ -74,7 +74,7 @@ public class MetricsTestController {
      */
     @GetMapping("/register-test-service")
     public ResponseEntity<String> registerTestService() {
-        logger.error("=== Register test service endpoint called ===");
+        logger.debug("=== Register test service endpoint called ===");
         
         if (httpMetricsService == null) {
             logger.error("HttpMetricsService is NULL in test controller");

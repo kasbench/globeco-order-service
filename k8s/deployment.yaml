@@ -14,6 +14,7 @@ spec:
       labels:
         app: globeco-order-service
     spec:
+      nodeName: "node-5"
       containers:
         - name: globeco-order-service
           image: kasbench/globeco-order-service:latest
@@ -53,20 +54,57 @@ spec:
               value: "INFO"
             - name: LOGGING_LEVEL_ORG_KASBENCH_GLOBECO_ORDER_SERVICE_CONTROLLER
               value: "INFO"
+            
+            # Inject the node and pod metadata from the Downward API
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: MY_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace  
+
             # Inject the node IP from the Downward API
             - name: NODE_IP
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
+
             # Point OTEL exporter to the local collector on the same node
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://$(NODE_IP):4317"
+              value: "http://$(NODE_IP):4318"
             # Override OTLP metrics export URL to use host networking
             - name: MANAGEMENT_OTLP_METRICS_EXPORT_URL
               value: "http://$(NODE_IP):4318/v1/metrics"
             # Override OTLP tracing endpoint to use host networking
             - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
               value: "http://$(NODE_IP):4318/v1/traces"
+
+            # Define standard service identity attributes
+            - name: OTEL_SERVICE_NAME
+              value: "globeco-order-service"  # Changed to match container name
+            - name: OTEL_SERVICE_NAMESPACE
+              value: "globeco"
+            
+            # Inject Kubernetes metadata as resource attributes for k8sattributes processor
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: >-
+                service.name=globeco-order-service,
+                service.namespace=globeco,
+                k8s.pod.ip=$(MY_POD_IP),
+                k8s.pod.name=$(MY_POD_NAME),
+                k8s.node.name=$(MY_NODE_NAME),
+                k8s.namespace.name=$(MY_NAMESPACE)
+
           resources:
             requests:
               cpu: "1000m"
