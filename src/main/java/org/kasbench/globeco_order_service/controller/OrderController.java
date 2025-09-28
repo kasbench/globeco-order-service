@@ -11,6 +11,8 @@ import org.kasbench.globeco_order_service.service.OrderService;
 import org.kasbench.globeco_order_service.service.BatchProcessingService;
 import org.kasbench.globeco_order_service.service.SortingSpecification;
 import org.kasbench.globeco_order_service.service.FilteringSpecification;
+import org.kasbench.globeco_order_service.service.SystemOverloadDetector;
+import org.kasbench.globeco_order_service.exception.SystemOverloadException;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +39,7 @@ public class OrderController {
     
     private final OrderService orderService;
     private final BatchProcessingService batchProcessingService;
+    private final SystemOverloadDetector systemOverloadDetector;
 
     /**
      * Get all orders with support for paging, sorting, and filtering.
@@ -195,6 +198,16 @@ public class OrderController {
         logger.info("Received batch order request with {} orders", orders != null ? orders.size() : 0);
         
         try {
+            // Check for system overload before processing
+            if (systemOverloadDetector.isSystemOverloaded()) {
+                int retryDelay = systemOverloadDetector.calculateRetryDelay();
+                logger.warn("System overload detected, rejecting batch order request. Retry after {} seconds", retryDelay);
+                throw new SystemOverloadException(
+                    "System temporarily overloaded - please retry in a few minutes", 
+                    retryDelay, 
+                    "system_resource_exhaustion"
+                );
+            }
             // Validate request is not null
             if (orders == null) {
                 logger.warn("Batch order request rejected: null order list");
@@ -313,6 +326,16 @@ public class OrderController {
                 request != null && request.getOrderIds() != null ? request.getOrderIds().size() : 0);
         
         try {
+            // Check for system overload before processing
+            if (systemOverloadDetector.isSystemOverloaded()) {
+                int retryDelay = systemOverloadDetector.calculateRetryDelay();
+                logger.warn("System overload detected, rejecting batch submission request. Retry after {} seconds", retryDelay);
+                throw new SystemOverloadException(
+                    "System temporarily overloaded - please retry in a few minutes", 
+                    retryDelay, 
+                    "system_resource_exhaustion"
+                );
+            }
             // Validate request is not null
             if (request == null || request.getOrderIds() == null) {
                 logger.warn("Batch submission request rejected: null request or order IDs");

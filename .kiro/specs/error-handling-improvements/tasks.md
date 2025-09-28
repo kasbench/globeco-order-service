@@ -13,14 +13,14 @@
   - Write unit tests for overload detection logic with various resource utilization scenarios
   - _Requirements: 1.1, 5.1, 5.3_
 
-- [-] 3. Create global exception handler for centralized error processing
+- [x] 3. Create global exception handler for centralized error processing
   - Create GlobalExceptionHandler with @ControllerAdvice annotation
   - Implement handleSystemOverload method returning 503 with Retry-After header
   - Implement handleValidationError method maintaining 400 status for client errors
   - Write unit tests for exception handler status code mapping and response generation
   - _Requirements: 1.1, 1.4, 3.1, 3.2_
 
-- [ ] 4. Integrate overload detection into OrderController endpoints
+- [x] 4. Integrate overload detection into OrderController endpoints
   - Add overload detection checks to POST /api/v1/orders endpoint before processing
   - Add overload detection checks to POST /api/v1/orders/batch/submit endpoint
   - Modify existing error handling to throw SystemOverloadException instead of returning 400
