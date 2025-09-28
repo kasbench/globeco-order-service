@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.kasbench.globeco_order_service.controller.GlobalExceptionHandler;
 import org.kasbench.globeco_order_service.dto.ErrorResponseDTO;
 import org.kasbench.globeco_order_service.exception.SystemOverloadException;
+import org.kasbench.globeco_order_service.service.SystemOverloadDetector;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,10 +21,13 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 class GlobalExceptionHandlerIntegrationTest {
     
+    @Autowired
+    private SystemOverloadDetector systemOverloadDetector;
+    
     @Test
     void globalExceptionHandler_ShouldHandleSystemOverloadException() {
         // Given
-        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+        GlobalExceptionHandler handler = new GlobalExceptionHandler(systemOverloadDetector);
         SystemOverloadException exception = new SystemOverloadException(
             "System overloaded", 300, "database_connection_pool_exhausted");
         WebRequest webRequest = new ServletWebRequest(new MockHttpServletRequest());
@@ -46,7 +51,7 @@ class GlobalExceptionHandlerIntegrationTest {
     @Test
     void globalExceptionHandler_ShouldHandleValidationException() {
         // Given
-        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+        GlobalExceptionHandler handler = new GlobalExceptionHandler(systemOverloadDetector);
         IllegalArgumentException exception = new IllegalArgumentException("Invalid order data");
         WebRequest webRequest = new ServletWebRequest(new MockHttpServletRequest());
         
@@ -68,7 +73,7 @@ class GlobalExceptionHandlerIntegrationTest {
     @Test
     void globalExceptionHandler_ShouldHandleGenericException() {
         // Given
-        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+        GlobalExceptionHandler handler = new GlobalExceptionHandler(systemOverloadDetector);
         RuntimeException exception = new RuntimeException("Unexpected error");
         WebRequest webRequest = new ServletWebRequest(new MockHttpServletRequest());
         

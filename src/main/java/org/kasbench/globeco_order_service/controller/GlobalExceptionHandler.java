@@ -2,8 +2,10 @@ package org.kasbench.globeco_order_service.controller;
 
 import org.kasbench.globeco_order_service.dto.ErrorResponseDTO;
 import org.kasbench.globeco_order_service.exception.SystemOverloadException;
+import org.kasbench.globeco_order_service.service.SystemOverloadDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,8 +25,16 @@ public class GlobalExceptionHandler {
     
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     
+    private final SystemOverloadDetector systemOverloadDetector;
+    
+    @Autowired
+    public GlobalExceptionHandler(SystemOverloadDetector systemOverloadDetector) {
+        this.systemOverloadDetector = systemOverloadDetector;
+    }
+    
     /**
      * Handles SystemOverloadException by returning 503 Service Unavailable with Retry-After header.
+     * Uses SystemOverloadDetector to calculate retry delay based on current system resource utilization.
      * 
      * @param ex the SystemOverloadException
      * @param request the web request
@@ -34,24 +44,25 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponseDTO> handleSystemOverload(
             SystemOverloadException ex, WebRequest request) {
         
-        logger.warn("System overload detected: {} - Retry after {} seconds", 
-                   ex.getMessage(), ex.getRetryAfterSeconds());
+        // Calculate retry delay based on current system resource utilization
+        int retryDelay = calculateRetryDelayBasedOnSystemUtilization(ex.getRetryAfterSeconds());
         
-        // Create structured error response
-        Map<String, Object> details = new HashMap<>();
-        details.put("overloadReason", ex.getOverloadReason());
-        details.put("recommendedAction", "retry_with_exponential_backoff");
+        logger.warn("System overload detected: {} - Retry after {} seconds (calculated from system utilization)", 
+                   ex.getMessage(), retryDelay);
+        
+        // Create structured error response with detailed system information
+        Map<String, Object> details = createSystemOverloadDetails(ex.getOverloadReason());
         
         ErrorResponseDTO errorResponse = new ErrorResponseDTO(
             "SERVICE_OVERLOADED",
             "System temporarily overloaded - please retry in a few minutes",
-            ex.getRetryAfterSeconds(),
+            retryDelay,
             details
         );
         
-        // Set Retry-After header
+        // Set Retry-After header to match JSON response
         HttpHeaders headers = new HttpHeaders();
-        headers.add("Retry-After", String.valueOf(ex.getRetryAfterSeconds()));
+        headers.add("Retry-After", String.valueOf(retryDelay));
         
         return new ResponseEntity<>(errorResponse, headers, HttpStatus.SERVICE_UNAVAILABLE);
     }
@@ -78,7 +89,29 @@ public class GlobalExceptionHandler {
     }
     
     /**
+     * Handles RuntimeException by returning 500 Internal Server Error.
+     * 
+     * @param ex the RuntimeException
+     * @param request the web request
+     * @return ResponseEntity with 500 status and structured error response
+     */
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ErrorResponseDTO> handleRuntimeError(
+            RuntimeException ex, WebRequest request) {
+        
+        logger.error("Runtime error occurred: {}", ex.getMessage(), ex);
+        
+        ErrorResponseDTO errorResponse = new ErrorResponseDTO(
+            "RUNTIME_ERROR",
+            "A runtime error occurred. Please try again later."
+        );
+        
+        return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+    
+    /**
      * Handles generic exceptions by returning 500 Internal Server Error.
+     * This is the catch-all handler for any unhandled exceptions.
      * 
      * @param ex the generic Exception
      * @param request the web request
@@ -96,5 +129,63 @@ public class GlobalExceptionHandler {
         );
         
         return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+    
+    /**
+     * Calculates retry delay based on current system resource utilization.
+     * Uses SystemOverloadDetector to get real-time system metrics for accurate retry timing.
+     * 
+     * @param fallbackDelay fallback delay from exception if system detector is unavailable
+     * @return calculated retry delay in seconds
+     */
+    private int calculateRetryDelayBasedOnSystemUtilization(int fallbackDelay) {
+        try {
+            if (systemOverloadDetector != null && systemOverloadDetector.isInitialized()) {
+                int calculatedDelay = systemOverloadDetector.calculateRetryDelay();
+                logger.debug("Calculated retry delay from system utilization: {} seconds", calculatedDelay);
+                return calculatedDelay;
+            } else {
+                logger.debug("SystemOverloadDetector not available, using fallback delay: {} seconds", fallbackDelay);
+                return fallbackDelay;
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to calculate retry delay from system utilization, using fallback: {} seconds", 
+                       fallbackDelay, e);
+            return fallbackDelay;
+        }
+    }
+    
+    /**
+     * Creates detailed system overload information for error response.
+     * Includes current resource utilization and recommended actions.
+     * 
+     * @param overloadReason the primary reason for overload
+     * @return map containing detailed overload information
+     */
+    private Map<String, Object> createSystemOverloadDetails(String overloadReason) {
+        Map<String, Object> details = new HashMap<>();
+        
+        try {
+            details.put("overloadReason", overloadReason);
+            details.put("recommendedAction", "retry_with_exponential_backoff");
+            
+            if (systemOverloadDetector != null && systemOverloadDetector.isInitialized()) {
+                // Add current resource utilization for debugging/monitoring
+                details.put("threadPoolUtilization", String.format("%.1f%%", 
+                           systemOverloadDetector.getThreadPoolUtilization() * 100));
+                details.put("databasePoolUtilization", String.format("%.1f%%", 
+                           systemOverloadDetector.getDatabaseConnectionUtilization() * 100));
+                details.put("memoryUtilization", String.format("%.1f%%", 
+                           systemOverloadDetector.getMemoryUtilization() * 100));
+            }
+            
+        } catch (Exception e) {
+            logger.debug("Failed to gather system overload details: {}", e.getMessage());
+            // Ensure basic details are always present
+            details.put("overloadReason", overloadReason != null ? overloadReason : "unknown");
+            details.put("recommendedAction", "retry_with_exponential_backoff");
+        }
+        
+        return details;
     }
 }
