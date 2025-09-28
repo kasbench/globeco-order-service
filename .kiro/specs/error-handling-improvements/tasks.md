@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Create core error handling infrastructure
+- [-] 1. Create core error handling infrastructure
   - Create ErrorResponseDTO class with structured error response format
   - Create SystemOverloadException custom exception class
   - Write unit tests for error response DTOs and exception classes
