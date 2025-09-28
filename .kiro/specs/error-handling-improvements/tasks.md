@@ -1,12 +1,12 @@
 # Implementation Plan
 
-- [-] 1. Create core error handling infrastructure
+- [x] 1. Create core error handling infrastructure
   - Create ErrorResponseDTO class with structured error response format
   - Create SystemOverloadException custom exception class
   - Write unit tests for error response DTOs and exception classes
   - _Requirements: 2.1, 2.2, 2.3_
 
-- [ ] 2. Implement system overload detection service
+- [x] 2. Implement system overload detection service
   - Create SystemOverloadDetector service class with resource monitoring methods
   - Implement thread pool utilization monitoring using ThreadPoolTaskExecutor metrics
   - Implement database connection pool monitoring using HikariCP MBeans
