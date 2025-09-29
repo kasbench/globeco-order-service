@@ -2,6 +2,8 @@ package org.kasbench.globeco_order_service.controller;
 
 import org.kasbench.globeco_order_service.dto.ErrorResponseDTO;
 import org.kasbench.globeco_order_service.exception.SystemOverloadException;
+import org.kasbench.globeco_order_service.service.ErrorClassification;
+import org.kasbench.globeco_order_service.service.ErrorMetricsService;
 import org.kasbench.globeco_order_service.service.SystemOverloadDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,10 +28,13 @@ public class GlobalExceptionHandler {
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     
     private final SystemOverloadDetector systemOverloadDetector;
+    private final ErrorMetricsService errorMetricsService;
     
     @Autowired
-    public GlobalExceptionHandler(SystemOverloadDetector systemOverloadDetector) {
+    public GlobalExceptionHandler(SystemOverloadDetector systemOverloadDetector,
+                                 @Autowired(required = false) ErrorMetricsService errorMetricsService) {
         this.systemOverloadDetector = systemOverloadDetector;
+        this.errorMetricsService = errorMetricsService;
     }
     
     /**
@@ -50,11 +55,20 @@ public class GlobalExceptionHandler {
         logger.warn("System overload detected: {} - Retry after {} seconds (calculated from system utilization)", 
                    ex.getMessage(), retryDelay);
         
+        // Record error metrics
+        recordErrorMetrics(ErrorClassification.SERVICE_OVERLOADED, HttpStatus.SERVICE_UNAVAILABLE.value(), 
+                          ErrorClassification.getSeverityLevel(ErrorClassification.SERVICE_OVERLOADED));
+        
+        // Record system overload event
+        if (errorMetricsService != null) {
+            errorMetricsService.recordSystemOverload(ex.getOverloadReason(), retryDelay);
+        }
+        
         // Create structured error response with detailed system information
         Map<String, Object> details = createSystemOverloadDetails(ex.getOverloadReason());
         
         ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-            "SERVICE_OVERLOADED",
+            ErrorClassification.SERVICE_OVERLOADED,
             "System temporarily overloaded - please retry in a few minutes",
             retryDelay,
             details
@@ -80,8 +94,12 @@ public class GlobalExceptionHandler {
         
         logger.debug("Validation error: {}", ex.getMessage());
         
+        // Record error metrics
+        recordErrorMetrics(ErrorClassification.VALIDATION_ERROR, HttpStatus.BAD_REQUEST.value(),
+                          ErrorClassification.getSeverityLevel(ErrorClassification.VALIDATION_ERROR));
+        
         ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-            "VALIDATION_ERROR",
+            ErrorClassification.VALIDATION_ERROR,
             ex.getMessage()
         );
         
@@ -101,8 +119,12 @@ public class GlobalExceptionHandler {
         
         logger.error("Runtime error occurred: {}", ex.getMessage(), ex);
         
+        // Record error metrics
+        recordErrorMetrics(ErrorClassification.RUNTIME_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                          ErrorClassification.getSeverityLevel(ErrorClassification.RUNTIME_ERROR));
+        
         ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-            "RUNTIME_ERROR",
+            ErrorClassification.RUNTIME_ERROR,
             "A runtime error occurred. Please try again later."
         );
         
@@ -123,8 +145,12 @@ public class GlobalExceptionHandler {
         
         logger.error("Unexpected error occurred: {}", ex.getMessage(), ex);
         
+        // Record error metrics
+        recordErrorMetrics(ErrorClassification.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                          ErrorClassification.getSeverityLevel(ErrorClassification.INTERNAL_ERROR));
+        
         ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-            "INTERNAL_ERROR",
+            ErrorClassification.INTERNAL_ERROR,
             "An unexpected error occurred. Please try again later."
         );
         
@@ -187,5 +213,26 @@ public class GlobalExceptionHandler {
         }
         
         return details;
+    }
+    
+    /**
+     * Records error metrics for monitoring and alerting purposes.
+     * 
+     * @param errorCode the error classification code
+     * @param httpStatus the HTTP status code
+     * @param severity the error severity level
+     */
+    private void recordErrorMetrics(String errorCode, int httpStatus, String severity) {
+        try {
+            if (errorMetricsService != null) {
+                errorMetricsService.recordError(errorCode, httpStatus, severity);
+                logger.debug("Recorded error metrics: code={}, status={}, severity={}", 
+                           errorCode, httpStatus, severity);
+            } else {
+                logger.debug("ErrorMetricsService not available, skipping error metrics recording");
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to record error metrics: {}", e.getMessage());
+        }
     }
 }
