@@ -1,7 +1,7 @@
 package org.kasbench.globeco_order_service.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
+
 import org.springframework.validation.annotation.Validated;
 
 import jakarta.validation.constraints.DecimalMax;
@@ -14,7 +14,6 @@ import jakarta.validation.constraints.NotNull;
  * Configuration properties for system overload detection.
  * Binds properties with prefix 'system.overload'.
  */
-@Component
 @ConfigurationProperties(prefix = "system.overload")
 @Validated
 public class SystemOverloadProperties {

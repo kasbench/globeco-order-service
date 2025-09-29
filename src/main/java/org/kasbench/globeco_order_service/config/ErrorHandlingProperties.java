@@ -1,7 +1,7 @@
 package org.kasbench.globeco_order_service.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
+
 import org.springframework.validation.annotation.Validated;
 
 import jakarta.validation.constraints.NotNull;
@@ -10,7 +10,6 @@ import jakarta.validation.constraints.NotNull;
  * Configuration properties for error handling system.
  * Binds properties with prefix 'error.handling'.
  */
-@Component
 @ConfigurationProperties(prefix = "error.handling")
 @Validated
 public class ErrorHandlingProperties {
