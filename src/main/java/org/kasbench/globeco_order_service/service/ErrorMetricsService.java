@@ -66,6 +66,7 @@ public class ErrorMetricsService {
             registerSystemOverloadMetrics();
             registerResourceUtilizationMetrics();
             registerErrorRateMetrics();
+            registerOverloadDetectionPerformanceMetrics();
             
             logger.info("Error metrics successfully initialized and registered");
         } catch (Exception e) {
@@ -307,6 +308,42 @@ public class ErrorMetricsService {
     }
     
     /**
+     * Registers performance metrics for overload detection operations.
+     */
+    private void registerOverloadDetectionPerformanceMetrics() {
+        if (systemOverloadDetector == null) {
+            logger.warn("SystemOverloadDetector not available, skipping overload detection performance metrics");
+            return;
+        }
+        
+        // Average overload detection time
+        Gauge.builder("overload_detection_average_duration_milliseconds", this, service -> {
+                try {
+                    return systemOverloadDetector.getAverageOverloadDetectionTimeMillis();
+                } catch (Exception e) {
+                    logger.debug("Failed to get overload detection average time: {}", e.getMessage());
+                    return 0.0;
+                }
+            })
+            .description("Average time spent detecting system overload conditions")
+            .register(meterRegistry);
+        
+        // Total overload detection checks
+        Gauge.builder("overload_detection_total_checks", this, service -> {
+                try {
+                    return (double) systemOverloadDetector.getTotalOverloadChecks();
+                } catch (Exception e) {
+                    logger.debug("Failed to get total overload checks: {}", e.getMessage());
+                    return 0.0;
+                }
+            })
+            .description("Total number of overload detection checks performed")
+            .register(meterRegistry);
+        
+        logger.debug("Overload detection performance metrics registered successfully");
+    }
+    
+    /**
      * Gets the current metrics status for debugging and monitoring.
      * 
      * @return status string with current metrics information
@@ -335,6 +372,28 @@ public class ErrorMetricsService {
                threadPoolUtilizationGauge != null && 
                databasePoolUtilizationGauge != null && 
                memoryUtilizationGauge != null;
+    }
+    
+    /**
+     * Records performance metrics for error handling operations.
+     * 
+     * @param errorType the type of error being handled
+     * @param durationMillis the duration in milliseconds
+     */
+    public void recordErrorHandlingPerformance(String errorType, double durationMillis) {
+        try {
+            Timer errorHandlingTimer = Timer.builder("error_handling_duration_milliseconds")
+                .description("Time spent handling different types of errors")
+                .tag("error_type", errorType)
+                .register(meterRegistry);
+            
+            errorHandlingTimer.record((long) (durationMillis * 1_000_000), java.util.concurrent.TimeUnit.NANOSECONDS);
+            
+            logger.debug("Recorded error handling performance: type={}, duration={}ms", errorType, durationMillis);
+            
+        } catch (Exception e) {
+            logger.error("Failed to record error handling performance metrics: {}", e.getMessage());
+        }
     }
     
     /**

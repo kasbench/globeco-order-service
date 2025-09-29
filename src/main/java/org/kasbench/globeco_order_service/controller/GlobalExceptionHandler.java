@@ -49,11 +49,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponseDTO> handleSystemOverload(
             SystemOverloadException ex, WebRequest request) {
         
+        long startTime = System.nanoTime();
+        
         // Calculate retry delay based on current system resource utilization
         int retryDelay = calculateRetryDelayBasedOnSystemUtilization(ex.getRetryAfterSeconds());
         
-        logger.warn("System overload detected: {} - Retry after {} seconds (calculated from system utilization)", 
-                   ex.getMessage(), retryDelay);
+        // Structured logging for overload events with severity levels and error categories
+        logSystemOverloadEvent(ex, retryDelay, request);
         
         // Record error metrics
         recordErrorMetrics(ErrorClassification.SERVICE_OVERLOADED, HttpStatus.SERVICE_UNAVAILABLE.value(), 
@@ -78,6 +80,9 @@ public class GlobalExceptionHandler {
         HttpHeaders headers = new HttpHeaders();
         headers.add("Retry-After", String.valueOf(retryDelay));
         
+        // Record error handling performance metrics
+        recordErrorHandlingPerformance("system_overload", startTime);
+        
         return new ResponseEntity<>(errorResponse, headers, HttpStatus.SERVICE_UNAVAILABLE);
     }
     
@@ -92,7 +97,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponseDTO> handleValidationError(
             IllegalArgumentException ex, WebRequest request) {
         
-        logger.debug("Validation error: {}", ex.getMessage());
+        long startTime = System.nanoTime();
+        
+        // Structured logging for validation errors with appropriate severity
+        logValidationError(ex, request);
         
         // Record error metrics
         recordErrorMetrics(ErrorClassification.VALIDATION_ERROR, HttpStatus.BAD_REQUEST.value(),
@@ -102,6 +110,9 @@ public class GlobalExceptionHandler {
             ErrorClassification.VALIDATION_ERROR,
             ex.getMessage()
         );
+        
+        // Record error handling performance metrics
+        recordErrorHandlingPerformance("validation_error", startTime);
         
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
@@ -117,7 +128,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponseDTO> handleRuntimeError(
             RuntimeException ex, WebRequest request) {
         
-        logger.error("Runtime error occurred: {}", ex.getMessage(), ex);
+        long startTime = System.nanoTime();
+        
+        // Structured logging for runtime errors with full stack trace
+        logRuntimeError(ex, request);
         
         // Record error metrics
         recordErrorMetrics(ErrorClassification.RUNTIME_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.value(),
@@ -127,6 +141,9 @@ public class GlobalExceptionHandler {
             ErrorClassification.RUNTIME_ERROR,
             "A runtime error occurred. Please try again later."
         );
+        
+        // Record error handling performance metrics
+        recordErrorHandlingPerformance("runtime_error", startTime);
         
         return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -143,7 +160,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponseDTO> handleGenericError(
             Exception ex, WebRequest request) {
         
-        logger.error("Unexpected error occurred: {}", ex.getMessage(), ex);
+        long startTime = System.nanoTime();
+        
+        // Structured logging for unexpected errors with full context
+        logGenericError(ex, request);
         
         // Record error metrics
         recordErrorMetrics(ErrorClassification.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.value(),
@@ -153,6 +173,9 @@ public class GlobalExceptionHandler {
             ErrorClassification.INTERNAL_ERROR,
             "An unexpected error occurred. Please try again later."
         );
+        
+        // Record error handling performance metrics
+        recordErrorHandlingPerformance("generic_error", startTime);
         
         return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -233,6 +256,135 @@ public class GlobalExceptionHandler {
             }
         } catch (Exception e) {
             logger.warn("Failed to record error metrics: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Logs system overload events with structured information and appropriate severity levels.
+     * 
+     * @param ex the SystemOverloadException
+     * @param retryDelay calculated retry delay in seconds
+     * @param request the web request context
+     */
+    private void logSystemOverloadEvent(SystemOverloadException ex, int retryDelay, WebRequest request) {
+        try {
+            // Get current system resource utilization for structured logging
+            Map<String, Object> logContext = new HashMap<>();
+            logContext.put("errorCategory", "SYSTEM_OVERLOAD");
+            logContext.put("severity", ErrorClassification.getSeverityLevel(ErrorClassification.SERVICE_OVERLOADED));
+            logContext.put("overloadReason", ex.getOverloadReason());
+            logContext.put("retryDelaySeconds", retryDelay);
+            logContext.put("requestPath", request.getDescription(false));
+            
+            if (systemOverloadDetector != null && systemOverloadDetector.isInitialized()) {
+                logContext.put("threadPoolUtilization", String.format("%.1f%%", 
+                              systemOverloadDetector.getThreadPoolUtilization() * 100));
+                logContext.put("databasePoolUtilization", String.format("%.1f%%", 
+                              systemOverloadDetector.getDatabaseConnectionUtilization() * 100));
+                logContext.put("memoryUtilization", String.format("%.1f%%", 
+                              systemOverloadDetector.getMemoryUtilization() * 100));
+            }
+            
+            // Log with WARN level for system overload events
+            logger.warn("System overload detected - Category: {}, Reason: {}, RetryDelay: {}s, " +
+                       "ThreadPool: {}, DatabasePool: {}, Memory: {}, Request: {}", 
+                       logContext.get("errorCategory"),
+                       logContext.get("overloadReason"),
+                       logContext.get("retryDelaySeconds"),
+                       logContext.getOrDefault("threadPoolUtilization", "N/A"),
+                       logContext.getOrDefault("databasePoolUtilization", "N/A"),
+                       logContext.getOrDefault("memoryUtilization", "N/A"),
+                       logContext.get("requestPath"));
+            
+        } catch (Exception e) {
+            logger.error("Failed to log system overload event: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Logs validation errors with structured information and appropriate severity levels.
+     * 
+     * @param ex the IllegalArgumentException
+     * @param request the web request context
+     */
+    private void logValidationError(IllegalArgumentException ex, WebRequest request) {
+        try {
+            // Log validation errors at DEBUG level as they are client errors
+            logger.debug("Validation error - Category: CLIENT_ERROR, Severity: {}, Message: {}, Request: {}", 
+                        ErrorClassification.getSeverityLevel(ErrorClassification.VALIDATION_ERROR),
+                        ex.getMessage(),
+                        request.getDescription(false));
+            
+        } catch (Exception e) {
+            logger.error("Failed to log validation error: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Logs runtime errors with structured information and full stack traces.
+     * 
+     * @param ex the RuntimeException
+     * @param request the web request context
+     */
+    private void logRuntimeError(RuntimeException ex, WebRequest request) {
+        try {
+            // Log runtime errors at ERROR level with full stack trace
+            logger.error("Runtime error - Category: RUNTIME_ERROR, Severity: {}, Message: {}, " +
+                        "ExceptionType: {}, Request: {}", 
+                        ErrorClassification.getSeverityLevel(ErrorClassification.RUNTIME_ERROR),
+                        ex.getMessage(),
+                        ex.getClass().getSimpleName(),
+                        request.getDescription(false),
+                        ex);
+            
+        } catch (Exception e) {
+            logger.error("Failed to log runtime error: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Logs generic/unexpected errors with structured information and full context.
+     * 
+     * @param ex the generic Exception
+     * @param request the web request context
+     */
+    private void logGenericError(Exception ex, WebRequest request) {
+        try {
+            // Log unexpected errors at ERROR level with full context
+            logger.error("Unexpected error - Category: INTERNAL_ERROR, Severity: {}, Message: {}, " +
+                        "ExceptionType: {}, Request: {}", 
+                        ErrorClassification.getSeverityLevel(ErrorClassification.INTERNAL_ERROR),
+                        ex.getMessage(),
+                        ex.getClass().getSimpleName(),
+                        request.getDescription(false),
+                        ex);
+            
+        } catch (Exception e) {
+            logger.error("Failed to log generic error: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Records performance metrics for error handling operations.
+     * 
+     * @param errorType the type of error being handled
+     * @param startTimeNanos the start time in nanoseconds
+     */
+    private void recordErrorHandlingPerformance(String errorType, long startTimeNanos) {
+        try {
+            long durationNanos = System.nanoTime() - startTimeNanos;
+            double durationMillis = durationNanos / 1_000_000.0;
+            
+            if (errorMetricsService != null) {
+                errorMetricsService.recordErrorHandlingPerformance(errorType, durationMillis);
+            }
+            
+            // Log performance metrics at DEBUG level
+            logger.debug("Error handling performance - Type: {}, Duration: {:.2f}ms", 
+                        errorType, durationMillis);
+            
+        } catch (Exception e) {
+            logger.debug("Failed to record error handling performance: {}", e.getMessage());
         }
     }
 }

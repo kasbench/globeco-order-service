@@ -34,6 +34,10 @@ public class SystemOverloadDetector {
     private HikariDataSource hikariDataSource;
     private HikariPoolMXBean hikariPoolMXBean;
     
+    // Performance metrics tracking
+    private long totalOverloadChecks = 0;
+    private long totalOverloadCheckTimeNanos = 0;
+    
     // Configuration thresholds (can be made configurable via properties)
     private static final double THREAD_POOL_THRESHOLD = 0.9; // 90%
     private static final double DATABASE_POOL_THRESHOLD = 0.95; // 95%
@@ -91,35 +95,43 @@ public class SystemOverloadDetector {
      * @return true if the system is overloaded and should reject new requests
      */
     public boolean isSystemOverloaded() {
+        long startTime = System.nanoTime();
+        
         try {
             // Check thread pool utilization
             if (isThreadPoolOverloaded()) {
                 log.debug("System overload detected: thread pool utilization exceeded threshold");
+                recordOverloadDetectionPerformance(startTime, true);
                 return true;
             }
             
             // Check database connection pool utilization
             if (isDatabaseConnectionPoolOverloaded()) {
                 log.debug("System overload detected: database connection pool utilization exceeded threshold");
+                recordOverloadDetectionPerformance(startTime, true);
                 return true;
             }
             
             // Check memory usage
             if (isMemoryOverloaded()) {
                 log.debug("System overload detected: memory utilization exceeded threshold");
+                recordOverloadDetectionPerformance(startTime, true);
                 return true;
             }
             
             // Check active request ratio (if thread pool is available)
             if (isActiveRequestRatioHigh()) {
                 log.debug("System overload detected: active request ratio exceeded threshold");
+                recordOverloadDetectionPerformance(startTime, true);
                 return true;
             }
             
+            recordOverloadDetectionPerformance(startTime, false);
             return false;
             
         } catch (Exception e) {
             log.warn("Error checking system overload status: {}", e.getMessage(), e);
+            recordOverloadDetectionPerformance(startTime, false);
             // In case of error, assume system is not overloaded to avoid false positives
             return false;
         }
@@ -432,6 +444,91 @@ public class SystemOverloadDetector {
         return status.toString();
     }
 
+    /**
+     * Records performance metrics for overload detection operations.
+     * 
+     * @param startTimeNanos the start time in nanoseconds
+     * @param overloadDetected whether overload was detected
+     */
+    private void recordOverloadDetectionPerformance(long startTimeNanos, boolean overloadDetected) {
+        try {
+            long durationNanos = System.nanoTime() - startTimeNanos;
+            
+            synchronized (this) {
+                totalOverloadChecks++;
+                totalOverloadCheckTimeNanos += durationNanos;
+            }
+            
+            double durationMillis = durationNanos / 1_000_000.0;
+            
+            log.debug("Overload detection performance - Duration: {:.3f}ms, Overload: {}", 
+                     durationMillis, overloadDetected);
+            
+        } catch (Exception e) {
+            log.debug("Failed to record overload detection performance: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Gets the average overload detection time in milliseconds.
+     * 
+     * @return average detection time in milliseconds
+     */
+    public double getAverageOverloadDetectionTimeMillis() {
+        synchronized (this) {
+            if (totalOverloadChecks == 0) {
+                return 0.0;
+            }
+            return (totalOverloadCheckTimeNanos / (double) totalOverloadChecks) / 1_000_000.0;
+        }
+    }
+    
+    /**
+     * Gets the total number of overload detection checks performed.
+     * 
+     * @return total number of checks
+     */
+    public long getTotalOverloadChecks() {
+        synchronized (this) {
+            return totalOverloadChecks;
+        }
+    }
+    
+    /**
+     * Gets performance statistics for overload detection.
+     * 
+     * @return formatted performance statistics string
+     */
+    public String getPerformanceStatistics() {
+        synchronized (this) {
+            if (totalOverloadChecks == 0) {
+                return "Overload Detection Performance: No checks performed yet";
+            }
+            
+            double avgTimeMillis = getAverageOverloadDetectionTimeMillis();
+            double totalTimeMillis = totalOverloadCheckTimeNanos / 1_000_000.0;
+            
+            return String.format("Overload Detection Performance:\n" +
+                               "  - Total checks: %d\n" +
+                               "  - Total time: %.2f ms\n" +
+                               "  - Average time per check: %.3f ms\n" +
+                               "  - Checks per second (estimated): %.1f",
+                               totalOverloadChecks, totalTimeMillis, avgTimeMillis,
+                               avgTimeMillis > 0 ? 1000.0 / avgTimeMillis : 0.0);
+        }
+    }
+    
+    /**
+     * Resets performance statistics. Useful for testing and monitoring.
+     */
+    public void resetPerformanceStatistics() {
+        synchronized (this) {
+            totalOverloadChecks = 0;
+            totalOverloadCheckTimeNanos = 0;
+            log.debug("Overload detection performance statistics reset");
+        }
+    }
+    
     /**
      * Checks if the overload detector is properly initialized.
      * 
