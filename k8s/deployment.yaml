@@ -17,7 +17,7 @@ spec:
       nodeName: "node-5"
       containers:
         - name: globeco-order-service
-          image: kasbench/globeco-order-service:1.0.0
+          image: kasbench/globeco-order-service:1.0.1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
