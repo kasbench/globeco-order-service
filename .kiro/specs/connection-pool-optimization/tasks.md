@@ -42,7 +42,7 @@
   - Handle optimistic locking with version field
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 6. Configure HTTP client connection pooling for external services
+- [x] 6. Configure HTTP client connection pooling for external services
   - Update `HttpClientConfiguration.java` to create PoolingHttpClientConnectionManager
   - Configure max total connections to 50 and max per route to 25
   - Set keep-alive strategy to 30 seconds
