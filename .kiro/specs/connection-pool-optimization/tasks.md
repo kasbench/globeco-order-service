@@ -7,7 +7,7 @@
   - Add leak-detection-threshold configuration for debugging
   - _Requirements: 1.1, 1.2, 2.1, 2.2_
 
-- [ ] 2. Implement connection pool monitoring service
+- [x] 2. Implement connection pool monitoring service
   - Create `ConnectionPoolMonitoringService.java` with scheduled metrics collection every 5 seconds
   - Implement metrics for active connections, idle connections, threads waiting, and utilization percentage
   - Add warning log when utilization exceeds 75%
