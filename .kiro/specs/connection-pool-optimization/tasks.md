@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Update connection pool configuration and reduce semaphore concurrency
+- [x] 1. Update connection pool configuration and reduce semaphore concurrency
   - Update `application.yml` to increase HikariCP maximum-pool-size to 60 and minimum-idle to 20
   - Set connection-timeout to 5000ms and validation-timeout to 2000ms
   - Update `BatchProcessingService.java` to reduce MAX_CONCURRENT_DB_OPERATIONS from 25 to 15

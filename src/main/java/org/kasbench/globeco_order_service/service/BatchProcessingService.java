@@ -25,7 +25,8 @@ public class BatchProcessingService {
     private static final Logger logger = LoggerFactory.getLogger(BatchProcessingService.class);
     
     // Limit concurrent database operations to prevent pool exhaustion
-    private static final int MAX_CONCURRENT_DB_OPERATIONS = 25;
+    // Reduced from 25 to 15 to align with optimized connection pool configuration
+    private static final int MAX_CONCURRENT_DB_OPERATIONS = 15;
     private static final int BATCH_CHUNK_SIZE = 50;
     
     private final Semaphore dbOperationSemaphore = new Semaphore(MAX_CONCURRENT_DB_OPERATIONS);
