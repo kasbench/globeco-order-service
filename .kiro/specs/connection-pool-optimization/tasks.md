@@ -81,7 +81,7 @@
   - Record transaction hold time for connections
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ] 11. Create health check endpoint for connection pool status
+- [x] 11. Create health check endpoint for connection pool status
   - Add GET endpoint `/api/v1/health/connection-pool` in SystemHealthController
   - Return ConnectionPoolHealth object with current metrics
   - Include health status (HEALTHY/WARNING/CRITICAL)

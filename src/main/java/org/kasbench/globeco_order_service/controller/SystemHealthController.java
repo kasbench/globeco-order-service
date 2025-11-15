@@ -2,8 +2,10 @@ package org.kasbench.globeco_order_service.controller;
 
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
+import org.kasbench.globeco_order_service.model.ConnectionPoolHealth;
 import org.kasbench.globeco_order_service.service.BatchProcessingService;
 import org.kasbench.globeco_order_service.service.ConnectionPoolCircuitBreaker;
+import org.kasbench.globeco_order_service.service.ConnectionPoolMonitoringService;
 import org.kasbench.globeco_order_service.service.ValidationCacheService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +16,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.sql.DataSource;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -36,6 +40,9 @@ public class SystemHealthController {
     
     @Autowired
     private ValidationCacheService validationCacheService;
+    
+    @Autowired
+    private ConnectionPoolMonitoringService connectionPoolMonitoringService;
     
     /**
      * Get detailed system health information including connection pool status.
@@ -145,5 +152,101 @@ public class SystemHealthController {
         return !circuitOpen && 
                !"CRITICAL".equals(poolStatus) && 
                !"ERROR".equals(poolStatus);
+    }
+    
+    /**
+     * Get connection pool health status with recommendations.
+     * Endpoint: GET /api/v1/health/connection-pool
+     */
+    @GetMapping("/health/connection-pool")
+    public ResponseEntity<Map<String, Object>> getConnectionPoolHealth() {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            // Get connection pool health from monitoring service
+            ConnectionPoolHealth health = connectionPoolMonitoringService.getHealth();
+            
+            // Build response with health metrics
+            response.put("active", health.getActive());
+            response.put("idle", health.getIdle());
+            response.put("waiting", health.getWaiting());
+            response.put("total", health.getTotal());
+            response.put("utilization", Math.round(health.getUtilization() * 1000.0) / 10.0); // Round to 1 decimal
+            response.put("status", health.getStatus());
+            response.put("healthy", health.isHealthy());
+            response.put("timestamp", health.getTimestamp());
+            
+            // Add recommendations based on current state
+            List<String> recommendations = generateRecommendations(health);
+            response.put("recommendations", recommendations);
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Failed to get connection pool health: {}", e.getMessage(), e);
+            response.put("status", "ERROR");
+            response.put("error", e.getMessage());
+            response.put("recommendations", List.of("Unable to retrieve connection pool metrics. Check system logs."));
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+    
+    /**
+     * Generate recommendations based on connection pool health state.
+     */
+    private List<String> generateRecommendations(ConnectionPoolHealth health) {
+        List<String> recommendations = new ArrayList<>();
+        
+        String status = health.getStatus();
+        int waiting = health.getWaiting();
+        double utilization = health.getUtilization();
+        int idle = health.getIdle();
+        
+        switch (status) {
+            case "CRITICAL":
+                recommendations.add("CRITICAL: Connection pool is at or near capacity.");
+                if (waiting > 0) {
+                    recommendations.add("Action required: " + waiting + " thread(s) are waiting for connections.");
+                }
+                recommendations.add("Immediate actions: Review active queries, check for connection leaks, consider scaling.");
+                recommendations.add("Check for long-running transactions or external service delays.");
+                break;
+                
+            case "WARNING":
+                recommendations.add("WARNING: Connection pool utilization is high (" + 
+                                  Math.round(utilization * 100) + "%).");
+                recommendations.add("Monitor closely: System is approaching capacity limits.");
+                if (waiting > 0) {
+                    recommendations.add("Some threads are waiting for connections (" + waiting + ").");
+                }
+                recommendations.add("Consider: Review batch sizes, optimize query performance, or increase pool size.");
+                break;
+                
+            case "HEALTHY":
+                recommendations.add("Connection pool is operating normally.");
+                if (utilization > 0.5) {
+                    recommendations.add("Utilization is moderate (" + Math.round(utilization * 100) + 
+                                      "%). Continue monitoring during peak hours.");
+                }
+                if (idle < 5 && health.getTotal() > 10) {
+                    recommendations.add("Low idle connections (" + idle + "). Consider increasing minimum-idle setting.");
+                }
+                break;
+                
+            default:
+                recommendations.add("Connection pool status is unknown. Check configuration.");
+        }
+        
+        // Additional context-specific recommendations
+        if (health.getTotal() == 0) {
+            recommendations.add("WARNING: No connections in pool. Check database connectivity.");
+        }
+        
+        if (utilization < 0.3 && health.getTotal() > 40) {
+            recommendations.add("INFO: Low utilization (" + Math.round(utilization * 100) + 
+                              "%). Pool size may be larger than needed.");
+        }
+        
+        return recommendations;
     }
 }
