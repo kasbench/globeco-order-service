@@ -232,7 +232,7 @@ public class OrderService {
             return BatchSubmitResponseDTO.validationFailure("Order IDs cannot be null");
         }
         
-        logger.info("BULK_SUBMISSION: Starting bulk order submission for {} orders, thread={}, timestamp={}",
+        logger.debug("BULK_SUBMISSION: Starting bulk order submission for {} orders, thread={}, timestamp={}",
                 orderIds.size(), threadName, overallStartTime);
 
         if (orderIds.isEmpty()) {
@@ -253,7 +253,7 @@ public class OrderService {
         }
 
         // Log performance baseline
-        logger.info("BULK_SUBMISSION_PERFORMANCE: Processing {} orders (limit: {}), thread={}",
+        logger.debug("BULK_SUBMISSION_PERFORMANCE: Processing {} orders (limit: {}), thread={}",
                 orderIds.size(), MAX_SUBMIT_BATCH_SIZE, threadName);
 
         try {
@@ -265,7 +265,7 @@ public class OrderService {
             List<Order> validOrders = loadAndValidateOrdersForBulkSubmission(orderIds);
             
             long loadDuration = (long) loadTimer.stop(orderLoadTimer);
-            logger.info("BULK_SUBMISSION_PERFORMANCE: Order loading completed in {}ms - {} valid out of {} requested, thread={}",
+            logger.debug("BULK_SUBMISSION_PERFORMANCE: Order loading completed in {}ms - {} valid out of {} requested, thread={}",
                     loadDuration, validOrders.size(), orderIds.size(), threadName);
             
             if (validOrders.isEmpty()) {
@@ -291,7 +291,7 @@ public class OrderService {
             BulkTradeOrderRequestDTO bulkRequest = buildBulkTradeOrderRequest(validOrders);
             
             long buildDuration = System.currentTimeMillis() - buildStartTime;
-            logger.info("BULK_SUBMISSION_PERFORMANCE: Bulk request building completed in {}ms, thread={}",
+            logger.debug("BULK_SUBMISSION_PERFORMANCE: Bulk request building completed in {}ms, thread={}",
                     buildDuration, threadName);
 
             // 3. Call trade service bulk endpoint
@@ -302,7 +302,7 @@ public class OrderService {
             BulkTradeOrderResponseDTO tradeServiceResponse = callTradeServiceBulk(bulkRequest);
             
             long tradeServiceDuration = (long) tradeServiceTimer.stop(tradeServiceCallTimer);
-            logger.info("BULK_SUBMISSION_PERFORMANCE: Trade service call completed in {}ms - {} successful, {} failed, thread={}",
+            logger.debug("BULK_SUBMISSION_PERFORMANCE: Trade service call completed in {}ms - {} successful, {} failed, thread={}",
                     tradeServiceDuration, tradeServiceResponse.getSuccessful(), tradeServiceResponse.getFailed(), threadName);
 
             // 4. Update order statuses in batch
@@ -313,7 +313,7 @@ public class OrderService {
             updateOrderStatusesFromBulkResponse(validOrders, tradeServiceResponse);
             
             long updateDuration = (long) updateTimer.stop(databaseUpdateTimer);
-            logger.info("BULK_SUBMISSION_PERFORMANCE: Status update completed in {}ms, thread={}",
+            logger.debug("BULK_SUBMISSION_PERFORMANCE: Status update completed in {}ms, thread={}",
                     updateDuration, threadName);
 
             // 5. Transform response to match existing API contract
@@ -323,7 +323,7 @@ public class OrderService {
             BatchSubmitResponseDTO response = transformBulkResponseToOrderServiceFormat(tradeServiceResponse, orderIds);
             
             long transformDuration = System.currentTimeMillis() - transformStartTime;
-            logger.info("BULK_SUBMISSION_PERFORMANCE: Response transformation completed in {}ms, thread={}",
+            logger.debug("BULK_SUBMISSION_PERFORMANCE: Response transformation completed in {}ms, thread={}",
                     transformDuration, threadName);
 
             // Log comprehensive completion metrics and update performance tracking
@@ -340,18 +340,18 @@ public class OrderService {
             orderProcessedCounter.increment(response.getSuccessful());
             performanceMonitor.recordBulkSubmission(orderIds.size(), overallDuration, response.getSuccessful());
             
-            logger.info("BULK_SUBMISSION: Completed successfully in {}ms - {} successful, {} failed out of {} total (success_rate: {:.2f}%), thread={}",
+            logger.debug("BULK_SUBMISSION: Completed successfully in {}ms - {} successful, {} failed out of {} total (success_rate: {:.2f}%), thread={}",
                     overallDuration, response.getSuccessful(), response.getFailed(), response.getTotalRequested(),
                     successRate, threadName);
 
             // Log detailed performance breakdown
-            logger.info("BULK_SUBMISSION_PERFORMANCE_BREAKDOWN: load={}ms, build={}ms, trade_service={}ms, update={}ms, transform={}ms, total={}ms, thread={}",
+            logger.debug("BULK_SUBMISSION_PERFORMANCE_BREAKDOWN: load={}ms, build={}ms, trade_service={}ms, update={}ms, transform={}ms, total={}ms, thread={}",
                     loadDuration, buildDuration, tradeServiceDuration, updateDuration, transformDuration, overallDuration, threadName);
 
             // Log performance per order metrics
             if (response.getSuccessful() > 0) {
                 double avgTimePerOrder = (double) overallDuration / response.getSuccessful();
-                logger.info("BULK_SUBMISSION_PERFORMANCE: Average processing time per successful order: {:.2f}ms, thread={}",
+                logger.debug("BULK_SUBMISSION_PERFORMANCE: Average processing time per successful order: {:.2f}ms, thread={}",
                         avgTimePerOrder, threadName);
             }
 
@@ -439,7 +439,7 @@ public class OrderService {
                     .build();
 
             String fullUrl = tradeServiceUrl + "/api/v1/tradeOrders";
-            logger.info(
+            logger.debug(
                     "DUPLICATE_TRACKING: Sending HTTP POST to trade service for orderId={}, url={}, thread={}, timestamp={}",
                     order.getId(), fullUrl, threadName, callStart);
 
@@ -449,7 +449,7 @@ public class OrderService {
                     String.class);
 
             long callEnd = System.currentTimeMillis();
-            logger.info(
+            logger.debug(
                     "DUPLICATE_TRACKING: Trade service HTTP response received for orderId={}, status={}, duration={}ms, thread={}",
                     order.getId(), response.getStatusCode(), (callEnd - callStart), threadName);
 
@@ -459,7 +459,7 @@ public class OrderService {
                     JsonNode node = mapper.readTree(response.getBody());
                     if (node.has("id") && node.get("id").isInt()) {
                         Integer tradeOrderId = node.get("id").asInt();
-                        logger.info(
+                        logger.debug(
                                 "DUPLICATE_TRACKING: Trade service SUCCESS for orderId={}, returned tradeOrderId={}, thread={}",
                                 order.getId(), tradeOrderId, threadName);
                         return tradeOrderId;
@@ -552,7 +552,7 @@ public class OrderService {
             return new ArrayList<>();
         }
         
-        logger.info("BULK_VALIDATION: Loading and validating {} orders for bulk submission, thread={}, timestamp={}",
+        logger.debug("BULK_VALIDATION: Loading and validating {} orders for bulk submission, thread={}, timestamp={}",
                 orderIds.size(), threadName, startTime);
 
         return readOnlyTransactionTemplate.execute(status -> {
@@ -562,7 +562,7 @@ public class OrderService {
                 List<Order> allOrders = orderRepository.findAllById(orderIds);
                 long dbDuration = System.currentTimeMillis() - dbStartTime;
                 
-                logger.info("BULK_VALIDATION: Loaded {} orders from database out of {} requested in {}ms, thread={}",
+                logger.debug("BULK_VALIDATION: Loaded {} orders from database out of {} requested in {}ms, thread={}",
                         allOrders.size(), orderIds.size(), dbDuration, threadName);
 
                 // Track missing orders for detailed logging
@@ -608,7 +608,7 @@ public class OrderService {
                 long validationDuration = System.currentTimeMillis() - validationStartTime;
                 long totalDuration = System.currentTimeMillis() - startTime;
                 
-                logger.info("BULK_VALIDATION: Validated {} orders out of {} loaded in {}ms (total: {}ms), thread={}",
+                logger.debug("BULK_VALIDATION: Validated {} orders out of {} loaded in {}ms (total: {}ms), thread={}",
                         validOrders.size(), allOrders.size(), validationDuration, totalDuration, threadName);
 
                 // Log validation errors for monitoring
@@ -623,7 +623,7 @@ public class OrderService {
                 // Log performance metrics and memory usage
                 if (allOrders.size() > 0) {
                     double avgValidationTimePerOrder = (double) validationDuration / allOrders.size();
-                    logger.info("BULK_VALIDATION_PERFORMANCE: Validated {} orders in {}ms (avg {:.2f}ms per order), success_rate={:.2f}%, thread={}",
+                    logger.debug("BULK_VALIDATION_PERFORMANCE: Validated {} orders in {}ms (avg {:.2f}ms per order), success_rate={:.2f}%, thread={}",
                             allOrders.size(), validationDuration, avgValidationTimePerOrder,
                             (double) validOrders.size() / allOrders.size() * 100, threadName);
                     
@@ -634,7 +634,7 @@ public class OrderService {
                         long maxMemory = runtime.maxMemory();
                         double memoryUsagePercent = (double) usedMemory / maxMemory * 100;
                         
-                        logger.info("BULK_VALIDATION_MEMORY: Memory usage after processing {} orders: {:.2f}% ({} MB used / {} MB max), thread={}",
+                        logger.debug("BULK_VALIDATION_MEMORY: Memory usage after processing {} orders: {:.2f}% ({} MB used / {} MB max), thread={}",
                                 allOrders.size(), memoryUsagePercent, usedMemory / (1024 * 1024), maxMemory / (1024 * 1024), threadName);
                         
                         // Suggest garbage collection for large batches to optimize memory
@@ -799,7 +799,7 @@ public class OrderService {
             throw new IllegalArgumentException("Orders list cannot be null or empty");
         }
 
-        logger.info("Building bulk trade order request for {} orders", orders.size());
+        logger.debug("Building bulk trade order request for {} orders", orders.size());
 
         try {
             List<TradeOrderPostDTO> tradeOrders = new ArrayList<>();
@@ -827,7 +827,7 @@ public class OrderService {
             BulkTradeOrderRequestDTO bulkRequest = BulkTradeOrderRequestDTO.of(tradeOrders);
             
             long duration = System.currentTimeMillis() - startTime;
-            logger.info("Successfully built bulk request with {} orders in {}ms", orders.size(), duration);
+            logger.debug("Successfully built bulk request with {} orders in {}ms", orders.size(), duration);
             
             return bulkRequest;
 
@@ -903,7 +903,7 @@ public class OrderService {
         int orderCount = bulkRequest.getOrderCount();
         String fullUrl = tradeServiceUrl + "/api/v1/tradeOrders/bulk";
         
-        logger.info("BULK_SUBMISSION: Sending HTTP POST to trade service bulk endpoint for {} orders, url={}, thread={}, timestamp={}",
+        logger.debug("BULK_SUBMISSION: Sending HTTP POST to trade service bulk endpoint for {} orders, url={}, thread={}, timestamp={}",
                 orderCount, fullUrl, threadName, startTime);
 
         try {
@@ -915,7 +915,7 @@ public class OrderService {
             long duration = System.currentTimeMillis() - startTime;
             HttpStatus statusCode = HttpStatus.valueOf(response.getStatusCode().value());
             
-            logger.info("BULK_SUBMISSION: Trade service HTTP response received for {} orders, status={}, duration={}ms, thread={}",
+            logger.debug("BULK_SUBMISSION: Trade service HTTP response received for {} orders, status={}, duration={}ms, thread={}",
                     orderCount, statusCode, duration, threadName);
 
             // Handle successful response (HTTP 201)
@@ -928,13 +928,13 @@ public class OrderService {
                     throw new RuntimeException("Trade service returned null response body");
                 }
 
-                logger.info("BULK_SUBMISSION: Trade service SUCCESS for {} orders, successful={}, failed={}, thread={}",
+                logger.debug("BULK_SUBMISSION: Trade service SUCCESS for {} orders, successful={}, failed={}, thread={}",
                         orderCount, responseBody.getSuccessful(), responseBody.getFailed(), threadName);
                 
                 // Log performance metrics
                 if (responseBody.getSuccessful() > 0) {
                     double avgTimePerOrder = (double) duration / responseBody.getSuccessful();
-                    logger.info("BULK_SUBMISSION_PERFORMANCE: Processed {} orders in {}ms (avg {:.2f}ms per order), success_rate={:.2f}%",
+                    logger.debug("BULK_SUBMISSION_PERFORMANCE: Processed {} orders in {}ms (avg {:.2f}ms per order), success_rate={:.2f}%",
                             responseBody.getSuccessful(), duration, avgTimePerOrder, responseBody.getSuccessRate() * 100);
                 }
 
@@ -1041,7 +1041,7 @@ public class OrderService {
             throw new IllegalArgumentException("Original order IDs cannot be null or empty");
         }
 
-        logger.info("Transforming bulk response to order service format: {} total requested, {} successful, {} failed",
+        logger.debug("Transforming bulk response to order service format: {} total requested, {} successful, {} failed",
                 bulkResponse.getTotalRequested(), bulkResponse.getSuccessful(), bulkResponse.getFailed());
 
         try {
@@ -1108,7 +1108,7 @@ public class OrderService {
                     .build();
 
             long duration = System.currentTimeMillis() - startTime;
-            logger.info("Successfully transformed bulk response in {}ms: status={}, successful={}, failed={}",
+            logger.debug("Successfully transformed bulk response in {}ms: status={}, successful={}, failed={}",
                     duration, status, successful, failed);
 
             return response;
@@ -1148,7 +1148,7 @@ public class OrderService {
         int orderCount = orders.size();
         int resultCount = bulkResponse.getResults() != null ? bulkResponse.getResults().size() : 0;
         
-        logger.info("BULK_STATUS_UPDATE: Starting status update for {} orders with {} results, thread={}, timestamp={}",
+        logger.debug("BULK_STATUS_UPDATE: Starting status update for {} orders with {} results, thread={}, timestamp={}",
                 orderCount, resultCount, threadName, startTime);
 
         // Validate response consistency
@@ -1259,7 +1259,7 @@ public class OrderService {
                 // Perform batch updates for successful orders with error handling and optimization
                 if (!successfulOrders.isEmpty()) {
                     try {
-                        logger.info("BULK_STATUS_UPDATE: Performing batch database update for {} successful orders, thread={}",
+                        logger.debug("BULK_STATUS_UPDATE: Performing batch database update for {} successful orders, thread={}",
                                 successfulOrders.size(), threadName);
                         
                         long dbStartTime = System.currentTimeMillis();
@@ -1267,7 +1267,7 @@ public class OrderService {
                         // Use batch processing for large updates to optimize memory and performance
                         final int BATCH_SIZE = 50; // Optimal batch size for database operations
                         if (successfulOrders.size() > BATCH_SIZE) {
-                            logger.info("BULK_STATUS_UPDATE: Processing {} orders in batches of {}, thread={}",
+                            logger.debug("BULK_STATUS_UPDATE: Processing {} orders in batches of {}, thread={}",
                                     successfulOrders.size(), BATCH_SIZE, threadName);
                             
                             for (int i = 0; i < successfulOrders.size(); i += BATCH_SIZE) {
@@ -1284,13 +1284,13 @@ public class OrderService {
                         
                         long dbDuration = System.currentTimeMillis() - dbStartTime;
                         
-                        logger.info("BULK_STATUS_UPDATE: Successfully updated {} orders to SENT status with trade order IDs in {}ms, thread={}",
+                        logger.debug("BULK_STATUS_UPDATE: Successfully updated {} orders to SENT status with trade order IDs in {}ms, thread={}",
                                 successfulOrders.size(), dbDuration, threadName);
                         
                         // Log performance metrics for database operations
                         if (successfulOrders.size() > 0) {
                             double avgDbTimePerOrder = (double) dbDuration / successfulOrders.size();
-                            logger.info("BULK_STATUS_UPDATE_PERFORMANCE: Database batch update: {} orders in {}ms (avg {:.2f}ms per order), thread={}",
+                            logger.debug("BULK_STATUS_UPDATE_PERFORMANCE: Database batch update: {} orders in {}ms (avg {:.2f}ms per order), thread={}",
                                     successfulOrders.size(), dbDuration, avgDbTimePerOrder, threadName);
                         }
                         
@@ -1305,13 +1305,13 @@ public class OrderService {
                 
                 // Log comprehensive summary of batch update operation
                 long totalDuration = System.currentTimeMillis() - startTime;
-                logger.info("BULK_STATUS_UPDATE: Completed status update in {}ms - {} successful, {} failed out of {} total orders, thread={}",
+                logger.debug("BULK_STATUS_UPDATE: Completed status update in {}ms - {} successful, {} failed out of {} total orders, thread={}",
                         totalDuration, successfulOrders.size(), failedOrders.size(), orderCount, threadName);
                 
                 // Log success rate metrics
                 if (orderCount > 0) {
                     double successRate = (double) successfulOrders.size() / orderCount * 100;
-                    logger.info("BULK_STATUS_UPDATE_METRICS: Success rate: {:.2f}% ({}/{}), processing_time={}ms, thread={}",
+                    logger.debug("BULK_STATUS_UPDATE_METRICS: Success rate: {:.2f}% ({}/{}), processing_time={}ms, thread={}",
                             successRate, successfulOrders.size(), orderCount, totalDuration, threadName);
                 }
                 
@@ -1515,16 +1515,16 @@ public class OrderService {
             resolvedIds = securityServiceClient.searchSecuritiesByTickers(tickersList);
 
             if (resolvedIds.isEmpty()) {
-                logger.info("No security tickers could be resolved to IDs. Tickers requested: {}", tickers);
+                logger.error("No security tickers could be resolved to IDs. Tickers requested: {}", tickers);
             } else {
-                logger.info("Successfully resolved {} of {} security tickers to IDs",
+                logger.debug("Successfully resolved {} of {} security tickers to IDs",
                         resolvedIds.size(), tickers.size());
 
                 // Log which tickers were not resolved
                 Set<String> unresolvedTickers = new HashSet<>(tickers);
                 unresolvedTickers.removeAll(resolvedIds.keySet());
                 if (!unresolvedTickers.isEmpty()) {
-                    logger.info("Unresolved security tickers (will be ignored in filtering): {}", unresolvedTickers);
+                    logger.error("Unresolved security tickers (will be ignored in filtering): {}", unresolvedTickers);
                 }
             }
 
@@ -1574,7 +1574,7 @@ public class OrderService {
             if (resolvedIds.isEmpty()) {
                 logger.info("No portfolio names could be resolved to IDs. Names requested: {}", names);
             } else {
-                logger.info("Successfully resolved {} of {} portfolio names to IDs",
+                logger.debug("Successfully resolved {} of {} portfolio names to IDs",
                         resolvedIds.size(), names.size());
 
                 // Log which names were not resolved
@@ -1645,7 +1645,7 @@ public class OrderService {
             return toDto(saved);
 
         } catch (Exception e) {
-            logger.info("Exception during order creation: {}", e.getMessage(), e);
+            logger.error("Exception during order creation: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -1705,7 +1705,7 @@ public class OrderService {
      * @return OrderListResponseDTO containing results for all orders
      */
     public OrderListResponseDTO processBatchOrders(List<OrderPostDTO> orders) {
-        logger.info("Starting batch order processing for {} orders", orders.size());
+        logger.debug("Starting batch order processing for {} orders", orders.size());
         long startTime = System.currentTimeMillis();
 
         // Validate batch size
@@ -1766,7 +1766,7 @@ public class OrderService {
         long processingTime = endTime - startTime;
 
         // Log batch processing metrics with failure breakdown
-        logger.info("Batch processing completed: {} total, {} successful, {} failed, {}ms processing time",
+        logger.debug("Batch processing completed: {} total, {} successful, {} failed, {}ms processing time",
                 orders.size(), successCount, failureCount, processingTime);
 
         // Log failure breakdown if there were failures
@@ -1826,14 +1826,14 @@ public class OrderService {
             // Validate foreign key references exist
             String referenceError = validateOrderReferences(orderDto);
             if (referenceError != null) {
-                logger.info("Order reference validation failed at index {}: {}", requestIndex, referenceError);
+                logger.error("Order reference validation failed at index {}: {}", requestIndex, referenceError);
                 return OrderPostResponseDTO.failure(referenceError, requestIndex);
             }
 
             // Create the order using existing logic
             OrderWithDetailsDTO createdOrder = create(orderDto);
             if (createdOrder == null) {
-                logger.info("Order creation returned null at index {}: Failed to create order - unknown error",
+                logger.error("Order creation returned null at index {}: Failed to create order - unknown error",
                         requestIndex);
                 return OrderPostResponseDTO.failure("Failed to create order: unknown error", requestIndex);
             }
@@ -1842,7 +1842,7 @@ public class OrderService {
             return OrderPostResponseDTO.success(createdOrder, createdOrder.getId().longValue(), requestIndex);
 
         } catch (Exception e) {
-            logger.info("Unexpected error processing order at index {}: {}", requestIndex, e.getMessage(), e);
+            logger.error("Unexpected error processing order at index {}: {}", requestIndex, e.getMessage(), e);
             return OrderPostResponseDTO.failure(
                     "Internal error processing order: " + e.getMessage(), requestIndex);
         }

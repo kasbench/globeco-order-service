@@ -128,7 +128,7 @@ public class BulkSubmissionPerformanceMonitor {
         double throughputImprovement = ((bulkOrdersPerSecond - estimatedIndividualOrdersPerSecond) / estimatedIndividualOrdersPerSecond) * 100;
         double efficiencyImprovement = ((estimatedIndividualTimePerOrder - bulkTimePerOrder) / estimatedIndividualTimePerOrder) * 100;
         
-        logger.info("BULK_SUBMISSION_PERFORMANCE_COMPARISON: " +
+        logger.debug("BULK_SUBMISSION_PERFORMANCE_COMPARISON: " +
                 "orders={}, bulk_time={}ms, estimated_individual_time={:.0f}ms, " +
                 "time_saved={:.0f}ms ({:.1f}% improvement), " +
                 "bulk_throughput={:.1f} orders/sec, estimated_individual_throughput={:.1f} orders/sec, " +
@@ -184,7 +184,7 @@ public class BulkSubmissionPerformanceMonitor {
         String reportString = report.toString();
         lastPerformanceReport.set(reportString);
         
-        logger.info("BULK_SUBMISSION_PERFORMANCE_REPORT:\n{}", reportString);
+        logger.debug("BULK_SUBMISSION_PERFORMANCE_REPORT:\n{}", reportString);
     }
     
     /**

@@ -136,7 +136,7 @@ public class OrderController {
             }
             
             // Log the request for debugging
-            logger.info("Orders request: limit={}, offset={}, sort={}, filters={}", 
+            logger.debug("Orders request: limit={}, offset={}, sort={}, filters={}", 
                     limit, offset, sort, filterParams);
             
             // Call service layer with all parameters
@@ -154,7 +154,7 @@ public class OrderController {
                 "hasPrevious", result.hasPrevious()
             ));
             
-            logger.info("Orders response: totalElements={}, currentPage={}, pageSize={}", 
+            logger.debug("Orders response: totalElements={}, currentPage={}, pageSize={}", 
                     result.getTotalElements(), result.getNumber(), result.getSize());
             
             return ResponseEntity.ok(response);
@@ -195,7 +195,7 @@ public class OrderController {
      */
     @PostMapping("/orders")
     public ResponseEntity<OrderListResponseDTO> createOrders(@Valid @RequestBody List<OrderPostDTO> orders) {
-        logger.info("Received batch order request with {} orders", orders != null ? orders.size() : 0);
+        logger.debug("Received batch order request with {} orders", orders != null ? orders.size() : 0);
         
         try {
             // Check for system overload before processing
@@ -230,7 +230,7 @@ public class OrderController {
             // Determine appropriate HTTP status code based on results
             HttpStatus statusCode = determineHttpStatus(response);
             
-            logger.info("Batch order processing completed: status={}, total={}, successful={}, failed={}", 
+            logger.debug("Batch order processing completed: status={}, total={}, successful={}, failed={}", 
                     response.getStatus(), response.getTotalReceived(), 
                     response.getSuccessful(), response.getFailed());
             
@@ -322,7 +322,7 @@ public class OrderController {
      */
     @PostMapping("/orders/batch/submit")
     public ResponseEntity<BatchSubmitResponseDTO> submitOrdersBatch(@Valid @RequestBody BatchSubmitRequestDTO request) {
-        logger.info("Received batch order submission request with {} order IDs", 
+        logger.debug("Received batch order submission request with {} order IDs", 
                 request != null && request.getOrderIds() != null ? request.getOrderIds().size() : 0);
         
         try {
@@ -376,7 +376,7 @@ public class OrderController {
             // Determine appropriate HTTP status code based on results
             HttpStatus statusCode = determineBatchSubmitHttpStatus(response);
             
-            logger.info("Batch submission processing completed: status={}, total={}, successful={}, failed={}", 
+            logger.debug("Batch submission processing completed: status={}, total={}, successful={}, failed={}", 
                     response.getStatus(), response.getTotalRequested(), 
                     response.getSuccessful(), response.getFailed());
             
