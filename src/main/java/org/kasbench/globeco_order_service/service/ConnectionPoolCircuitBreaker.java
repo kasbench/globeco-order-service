@@ -2,12 +2,17 @@ package org.kasbench.globeco_order_service.service;
 
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -18,9 +23,11 @@ import java.util.concurrent.atomic.AtomicLong;
 public class ConnectionPoolCircuitBreaker {
     private static final Logger logger = LoggerFactory.getLogger(ConnectionPoolCircuitBreaker.class);
     
-    private static final double CRITICAL_UTILIZATION_THRESHOLD = 0.9; // 90%
-    private static final int FAILURE_THRESHOLD = 5;
-    private static final long RECOVERY_TIME_MS = 30000; // 30 seconds
+    private static final double CRITICAL_UTILIZATION_THRESHOLD = 0.75; // 75%
+    private static final int FAILURE_THRESHOLD = 3;
+    private static final long RECOVERY_TIME_MS = 15000; // 15 seconds
+    private static final DateTimeFormatter TIMESTAMP_FORMATTER = 
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
     
     @Autowired
     private DataSource dataSource;
@@ -29,21 +36,54 @@ public class ConnectionPoolCircuitBreaker {
     private final AtomicLong lastFailureTime = new AtomicLong(0);
     private volatile boolean circuitOpen = false;
     
+    // Metrics
+    private Counter openCounter;
+    private Counter closeCounter;
+    private Counter halfOpenCounter;
+    private Counter rejectionCounter;
+    
+    @Autowired
+    public void initMetrics(MeterRegistry meterRegistry) {
+        this.openCounter = Counter.builder("circuit_breaker.state.open")
+            .description("Number of times circuit breaker opened")
+            .register(meterRegistry);
+        
+        this.closeCounter = Counter.builder("circuit_breaker.state.closed")
+            .description("Number of times circuit breaker closed")
+            .register(meterRegistry);
+        
+        this.halfOpenCounter = Counter.builder("circuit_breaker.state.half_open")
+            .description("Number of times circuit breaker entered half-open state")
+            .register(meterRegistry);
+        
+        this.rejectionCounter = Counter.builder("circuit_breaker.rejections")
+            .description("Number of operations rejected by circuit breaker")
+            .register(meterRegistry);
+        
+        meterRegistry.gauge("circuit_breaker.failures", failureCount);
+    }
+    
     /**
      * Check if operations should be allowed based on connection pool health.
      */
     public boolean allowOperation() {
         // Check if circuit should be closed (recovered)
         if (circuitOpen && System.currentTimeMillis() - lastFailureTime.get() > RECOVERY_TIME_MS) {
-            logger.info("Circuit breaker attempting recovery...");
+            String timestamp = TIMESTAMP_FORMATTER.format(Instant.now());
+            logger.info("Circuit breaker attempting recovery at {}", timestamp);
+            halfOpenCounter.increment();
+            
             if (isConnectionPoolHealthy()) {
                 circuitOpen = false;
                 failureCount.set(0);
-                logger.info("Circuit breaker closed - system recovered");
+                closeCounter.increment();
+                logger.info("Circuit breaker state change: OPEN -> CLOSED at {} - Reason: Connection pool recovered to healthy state", 
+                    timestamp);
             }
         }
         
         if (circuitOpen) {
+            rejectionCounter.increment();
             logger.warn("Circuit breaker OPEN - rejecting operation to protect system");
             return false;
         }
@@ -66,7 +106,10 @@ public class ConnectionPoolCircuitBreaker {
         
         if (failures >= FAILURE_THRESHOLD && !circuitOpen) {
             circuitOpen = true;
-            logger.error("Circuit breaker OPENED after {} failures - system protection activated", failures);
+            openCounter.increment();
+            String timestamp = TIMESTAMP_FORMATTER.format(Instant.now());
+            logger.error("Circuit breaker state change: CLOSED -> OPEN at {} - Reason: {} consecutive failures, connection pool utilization exceeded {}%", 
+                timestamp, failures, (int)(CRITICAL_UTILIZATION_THRESHOLD * 100));
         }
     }
     

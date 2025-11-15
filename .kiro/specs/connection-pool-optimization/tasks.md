@@ -65,7 +65,7 @@
   - Log warning when semaphore wait exceeds threshold
   - _Requirements: 2.3, 2.4_
 
-- [ ] 9. Update circuit breaker configuration
+- [x] 9. Update circuit breaker configuration
   - Update `ConnectionPoolCircuitBreaker.java` to set utilization threshold to 0.75
   - Set failure threshold to 3 consecutive failures
   - Set recovery time to 15 seconds
