@@ -321,10 +321,15 @@ public class OrderService {
         try {
             // 1. Load and validate orders in batch
             Timer.Sample loadTimer = Timer.start(meterRegistry);
+            long transactionStartTime = System.currentTimeMillis();
             
             List<Order> validOrders = loadAndValidateOrdersForBulkSubmission(orderIds);
             
             long loadDuration = (long) loadTimer.stop(orderLoadTimer);
+            long transactionHoldTime = System.currentTimeMillis() - transactionStartTime;
+            
+            // Track transaction hold time for the read transaction
+            performanceMonitor.recordTransactionHoldTime(transactionHoldTime);
             
             if (validOrders.isEmpty()) {
                 logger.warn("BULK_SUBMISSION: No valid orders found from {} requested orders, thread={}",
@@ -354,13 +359,21 @@ public class OrderService {
             BulkTradeOrderResponseDTO tradeServiceResponse = callTradeServiceBulk(bulkRequest);
             
             long tradeServiceDuration = (long) tradeServiceTimer.stop(tradeServiceCallTimer);
+            
+            // Track external service call duration separately
+            performanceMonitor.recordExternalServiceCall(tradeServiceDuration);
 
             // 4. Update order statuses in batch
             Timer.Sample updateTimer = Timer.start(meterRegistry);
+            long updateTransactionStartTime = System.currentTimeMillis();
             
             updateOrderStatusesFromBulkResponse(validOrders, tradeServiceResponse);
             
             long updateDuration = (long) updateTimer.stop(databaseUpdateTimer);
+            long updateTransactionHoldTime = System.currentTimeMillis() - updateTransactionStartTime;
+            
+            // Track transaction hold time for the write transaction
+            performanceMonitor.recordTransactionHoldTime(updateTransactionHoldTime);
 
             // 5. Transform response to match existing API contract
             long transformStartTime = System.currentTimeMillis();
@@ -576,6 +589,9 @@ public class OrderService {
                 long dbStartTime = System.currentTimeMillis();
                 List<Order> allOrders = orderRepository.findAllByIdWithRelations(orderIds);
                 long dbDuration = System.currentTimeMillis() - dbStartTime;
+                
+                // Track database query execution time
+                performanceMonitor.recordDatabaseQueryTime(dbDuration);
 
                 // Track missing orders
                 if (allOrders.size() < orderIds.size()) {
