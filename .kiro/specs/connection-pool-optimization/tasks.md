@@ -50,7 +50,7 @@
   - Set connect timeout to 5 seconds and read timeout to 45 seconds
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 7. Reduce logging overhead in high-throughput paths
+- [x] 7. Reduce logging overhead in high-throughput paths
   - Update `application.yml` to set service and controller logging to INFO level in production
   - Add conditional logging checks (if logger.isDebugEnabled()) in BatchProcessingService
   - Add conditional logging checks in OrderService bulk submission methods

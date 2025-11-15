@@ -53,13 +53,18 @@ public class BatchProcessingService {
         }
         
         List<OrderPostResponseDTO> allResults = new ArrayList<>();
+        int totalChunks = (orders.size() + BATCH_CHUNK_SIZE - 1) / BATCH_CHUNK_SIZE;
         
         // Process in chunks to avoid overwhelming the system
         for (int i = 0; i < orders.size(); i += BATCH_CHUNK_SIZE) {
             int endIndex = Math.min(i + BATCH_CHUNK_SIZE, orders.size());
             List<OrderPostDTO> chunk = orders.subList(i, endIndex);
+            int chunkNumber = (i / BATCH_CHUNK_SIZE) + 1;
             
-            logger.debug("Processing chunk {}-{} of {} orders", i, endIndex - 1, orders.size());
+            if (logger.isDebugEnabled()) {
+                logger.debug("Processing chunk {}/{} ({}-{} of {} orders)", 
+                        chunkNumber, totalChunks, i, endIndex - 1, orders.size());
+            }
             
             List<OrderPostResponseDTO> chunkResults = processChunkWithSemaphore(chunk, i);
             allResults.addAll(chunkResults);
@@ -76,6 +81,12 @@ public class BatchProcessingService {
             }
         }
         
+        // Summary log instead of per-order logs
+        long successCount = allResults.stream().filter(OrderPostResponseDTO::isSuccess).count();
+        long failureCount = allResults.size() - successCount;
+        logger.info("Batch processing completed: {} total orders, {} successful, {} failed", 
+                allResults.size(), successCount, failureCount);
+        
         return OrderListResponseDTO.fromResults(allResults);
     }
     
@@ -84,6 +95,8 @@ public class BatchProcessingService {
      */
     private List<OrderPostResponseDTO> processChunkWithSemaphore(List<OrderPostDTO> chunk, int baseIndex) {
         List<CompletableFuture<OrderPostResponseDTO>> futures = new ArrayList<>();
+        int semaphoreTimeouts = 0;
+        int connectionFailures = 0;
         
         for (int i = 0; i < chunk.size(); i++) {
             final int orderIndex = baseIndex + i;
@@ -93,7 +106,9 @@ public class BatchProcessingService {
                 try {
                     // Acquire semaphore before database operation
                     if (!dbOperationSemaphore.tryAcquire(5, TimeUnit.SECONDS)) {
-                        logger.warn("Timeout waiting for database semaphore for order at index {}", orderIndex);
+                        if (logger.isDebugEnabled()) {
+                            logger.debug("Timeout waiting for database semaphore for order at index {}", orderIndex);
+                        }
                         return OrderPostResponseDTO.failure(
                             "System overloaded - database operation timeout", orderIndex);
                     }
@@ -118,7 +133,9 @@ public class BatchProcessingService {
                     
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    logger.warn("Order processing interrupted at index {}", orderIndex);
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Order processing interrupted at index {}", orderIndex);
+                    }
                     return OrderPostResponseDTO.failure("Processing interrupted", orderIndex);
                 } catch (Exception e) {
                     logger.error("Unexpected error processing order at index {}: {}", orderIndex, e.getMessage());
@@ -132,13 +149,36 @@ public class BatchProcessingService {
         
         // Wait for all futures to complete
         List<OrderPostResponseDTO> results = new ArrayList<>();
+        int futureFailures = 0;
         for (CompletableFuture<OrderPostResponseDTO> future : futures) {
             try {
-                results.add(future.get(30, TimeUnit.SECONDS)); // 30 second timeout per order
+                OrderPostResponseDTO result = future.get(30, TimeUnit.SECONDS);
+                results.add(result);
+                
+                // Track failure types for summary logging
+                if (!result.isSuccess()) {
+                    if (result.getMessage() != null) {
+                        if (result.getMessage().contains("semaphore") || result.getMessage().contains("timeout")) {
+                            semaphoreTimeouts++;
+                        } else if (result.getMessage().contains("Connection")) {
+                            connectionFailures++;
+                        }
+                    }
+                }
             } catch (Exception e) {
                 logger.error("Failed to get result from future: {}", e.getMessage());
                 results.add(OrderPostResponseDTO.failure("Future execution failed: " + e.getMessage(), -1));
+                futureFailures++;
             }
+        }
+        
+        // Summary log for chunk processing
+        long successCount = results.stream().filter(OrderPostResponseDTO::isSuccess).count();
+        if (logger.isDebugEnabled()) {
+            logger.debug("Chunk processing summary: {} total, {} successful, {} failed " +
+                    "(semaphore timeouts: {}, connection failures: {}, future failures: {})",
+                    results.size(), successCount, results.size() - successCount,
+                    semaphoreTimeouts, connectionFailures, futureFailures);
         }
         
         return results;
