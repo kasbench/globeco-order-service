@@ -557,12 +557,12 @@ public class OrderService {
 
         return readOnlyTransactionTemplate.execute(status -> {
             try {
-                // Batch load all orders using findAllById for efficiency with optimized fetch
+                // Batch load all orders using eager fetching to eliminate N+1 queries
                 long dbStartTime = System.currentTimeMillis();
-                List<Order> allOrders = orderRepository.findAllById(orderIds);
+                List<Order> allOrders = orderRepository.findAllByIdWithRelations(orderIds);
                 long dbDuration = System.currentTimeMillis() - dbStartTime;
                 
-                logger.debug("BULK_VALIDATION: Loaded {} orders from database out of {} requested in {}ms, thread={}",
+                logger.debug("BULK_VALIDATION: Loaded {} orders with relations from database out of {} requested in {}ms (eager fetch), thread={}",
                         allOrders.size(), orderIds.size(), dbDuration, threadName);
 
                 // Track missing orders for detailed logging

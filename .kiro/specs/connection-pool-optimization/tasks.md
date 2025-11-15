@@ -15,7 +15,7 @@
   - Register Micrometer gauges for real-time monitoring
   - _Requirements: 1.4, 1.5, 8.1, 8.2, 8.3, 8.4, 8.5_
 
-- [ ] 3. Add eager fetching to OrderRepository to eliminate N+1 queries
+- [x] 3. Add eager fetching to OrderRepository to eliminate N+1 queries
   - Add `findAllByIdWithRelations()` method to `OrderRepository.java` with JOIN FETCH for status, orderType, and blotter
   - Update `OrderService.loadAndValidateOrdersForBulkSubmission()` to use the new eager fetching method
   - Verify single query execution with query logging

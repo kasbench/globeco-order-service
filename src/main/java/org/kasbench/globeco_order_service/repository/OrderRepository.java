@@ -10,6 +10,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Integer>, JpaSpecificationExecutor<Order> {
     
@@ -56,4 +58,19 @@ public interface OrderRepository extends JpaRepository<Order, Integer>, JpaSpeci
     @Modifying
     @Query("UPDATE Order o SET o.tradeOrderId = NULL WHERE o.id = :orderId AND o.tradeOrderId = -:orderId")
     int releaseReservedOrder(@Param("orderId") Integer orderId);
+    
+    /**
+     * Find all orders by IDs with eager fetching of related entities.
+     * This method eliminates N+1 query problems by using JOIN FETCH to load
+     * status, orderType, and blotter in a single query.
+     * 
+     * @param ids List of order IDs to fetch
+     * @return List of orders with all relations eagerly loaded
+     */
+    @Query("SELECT DISTINCT o FROM Order o " +
+           "LEFT JOIN FETCH o.status " +
+           "LEFT JOIN FETCH o.orderType " +
+           "LEFT JOIN FETCH o.blotter " +
+           "WHERE o.id IN :ids")
+    List<Order> findAllByIdWithRelations(@Param("ids") List<Integer> ids);
 } 
