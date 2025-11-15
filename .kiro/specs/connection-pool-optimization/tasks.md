@@ -57,7 +57,7 @@
   - Replace per-order debug logs with summary logs in batch processing
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 8. Add semaphore metrics and monitoring
+- [x] 8. Add semaphore metrics and monitoring
   - Add Counter for semaphore wait events in BatchProcessingService
   - Add Timer for semaphore wait duration tracking
   - Add Gauge for available permits monitoring

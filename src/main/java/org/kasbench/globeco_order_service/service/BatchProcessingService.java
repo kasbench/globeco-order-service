@@ -1,5 +1,9 @@
 package org.kasbench.globeco_order_service.service;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.kasbench.globeco_order_service.dto.OrderPostDTO;
 import org.kasbench.globeco_order_service.dto.OrderPostResponseDTO;
 import org.kasbench.globeco_order_service.dto.OrderListResponseDTO;
@@ -15,6 +19,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Service to handle batch processing with connection pool protection.
@@ -28,15 +34,46 @@ public class BatchProcessingService {
     // Reduced from 25 to 15 to align with optimized connection pool configuration
     private static final int MAX_CONCURRENT_DB_OPERATIONS = 15;
     private static final int BATCH_CHUNK_SIZE = 50;
+    private static final long SEMAPHORE_WAIT_THRESHOLD_MS = 1000; // 1 second threshold for warning
     
     private final Semaphore dbOperationSemaphore = new Semaphore(MAX_CONCURRENT_DB_OPERATIONS);
     private final ExecutorService executorService = Executors.newFixedThreadPool(MAX_CONCURRENT_DB_OPERATIONS);
+    
+    // Metrics tracking
+    private final Counter semaphoreWaitCounter;
+    private final Timer semaphoreWaitTimer;
+    private final AtomicLong totalWaitTimeMs = new AtomicLong(0);
+    private final AtomicInteger totalWaitEvents = new AtomicInteger(0);
     
     @Autowired
     private OrderService orderService;
     
     @Autowired
     private ConnectionPoolCircuitBreaker circuitBreaker;
+    
+    /**
+     * Constructor with metrics initialization.
+     */
+    @Autowired
+    public BatchProcessingService(MeterRegistry meterRegistry) {
+        // Initialize semaphore wait counter
+        this.semaphoreWaitCounter = Counter.builder("semaphore.wait.events")
+                .description("Number of times threads waited for semaphore permits")
+                .tag("service", "batch_processing")
+                .register(meterRegistry);
+        
+        // Initialize semaphore wait timer
+        this.semaphoreWaitTimer = Timer.builder("semaphore.wait.duration")
+                .description("Duration of semaphore wait times")
+                .tag("service", "batch_processing")
+                .register(meterRegistry);
+        
+        // Initialize available permits gauge
+        Gauge.builder("semaphore.available.permits", dbOperationSemaphore, Semaphore::availablePermits)
+                .description("Number of available semaphore permits")
+                .tag("service", "batch_processing")
+                .register(meterRegistry);
+    }
     
     /**
      * Process orders in controlled batches to prevent connection pool exhaustion.
@@ -104,6 +141,9 @@ public class BatchProcessingService {
             
             CompletableFuture<OrderPostResponseDTO> future = CompletableFuture.supplyAsync(() -> {
                 try {
+                    // Track semaphore wait time
+                    long waitStartTime = System.currentTimeMillis();
+                    
                     // Acquire semaphore before database operation
                     if (!dbOperationSemaphore.tryAcquire(5, TimeUnit.SECONDS)) {
                         if (logger.isDebugEnabled()) {
@@ -111,6 +151,27 @@ public class BatchProcessingService {
                         }
                         return OrderPostResponseDTO.failure(
                             "System overloaded - database operation timeout", orderIndex);
+                    }
+                    
+                    // Calculate and record wait time
+                    long waitDuration = System.currentTimeMillis() - waitStartTime;
+                    if (waitDuration > 0) {
+                        // Record wait event
+                        semaphoreWaitCounter.increment();
+                        semaphoreWaitTimer.record(waitDuration, TimeUnit.MILLISECONDS);
+                        
+                        // Track for average calculation
+                        totalWaitTimeMs.addAndGet(waitDuration);
+                        totalWaitEvents.incrementAndGet();
+                        
+                        // Log warning if wait time exceeds threshold
+                        if (waitDuration > SEMAPHORE_WAIT_THRESHOLD_MS) {
+                            logger.warn("Semaphore wait time exceeded threshold: {}ms for order at index {} " +
+                                    "(available permits: {}, queue length: {})",
+                                    waitDuration, orderIndex, 
+                                    dbOperationSemaphore.availablePermits(),
+                                    dbOperationSemaphore.getQueueLength());
+                        }
                     }
                     
                     try {
@@ -196,5 +257,37 @@ public class BatchProcessingService {
      */
     public int getQueueLength() {
         return dbOperationSemaphore.getQueueLength();
+    }
+    
+    /**
+     * Get average wait time for health checks.
+     * Returns the average time threads have waited for semaphore permits.
+     * 
+     * @return average wait time in milliseconds, or 0 if no wait events recorded
+     */
+    public long getAverageWaitTime() {
+        int events = totalWaitEvents.get();
+        if (events == 0) {
+            return 0;
+        }
+        return totalWaitTimeMs.get() / events;
+    }
+    
+    /**
+     * Get total number of semaphore wait events.
+     * 
+     * @return total count of wait events
+     */
+    public int getTotalWaitEvents() {
+        return totalWaitEvents.get();
+    }
+    
+    /**
+     * Get total accumulated wait time.
+     * 
+     * @return total wait time in milliseconds
+     */
+    public long getTotalWaitTime() {
+        return totalWaitTimeMs.get();
     }
 }
