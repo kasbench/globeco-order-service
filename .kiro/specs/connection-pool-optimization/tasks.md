@@ -21,14 +21,14 @@
   - Verify single query execution with query logging
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-- [ ] 4. Restructure transaction boundaries in OrderService
-  - [ ] 4.1 Split `submitOrder()` method into separate load and update transactions
+- [x] 4. Restructure transaction boundaries in OrderService
+  - [x] 4.1 Split `submitOrder()` method into separate load and update transactions
     - Create `loadOrderInReadTransaction()` with @Transactional(readOnly=true, timeout=3)
     - Create `updateOrderInWriteTransaction()` with @Transactional(timeout=5)
     - Refactor `submitOrder()` to call load, then external service, then update
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
   
-  - [ ] 4.2 Update bulk submission flow to use split transactions
+  - [x] 4.2 Update bulk submission flow to use split transactions
     - Modify `submitOrdersBatch()` to use read-only transaction for order loading
     - Ensure external trade service call happens outside transaction scope
     - Use write transaction only for status updates

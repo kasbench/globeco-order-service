@@ -180,42 +180,103 @@ public class OrderService {
                 .register(meterRegistry);
     }
 
-    @Transactional
+    /**
+     * Submit a single order to the trade service.
+     * This method uses split transactions to minimize connection hold time:
+     * 1. Load order in read-only transaction (3s timeout)
+     * 2. Call external trade service (no transaction)
+     * 3. Update order in write transaction (5s timeout)
+     * 
+     * @param id The order ID to submit
+     * @return OrderDTO with updated status, or null if submission fails
+     */
     public OrderDTO submitOrder(Integer id) {
-        // Load order and validate status in one query
-        Order order = orderRepository.findById(id).orElseThrow();
-        if (!order.getStatus().getAbbreviation().equals("NEW")) {
+        // Transaction 1: Load order (short, read-only)
+        Order order = loadOrderInReadTransaction(id);
+        if (order == null) {
             return null;
         }
 
-        // Prepare trade order data
-        TradeOrderPostDTO tradeOrder = TradeOrderPostDTO.builder()
-                .orderId(id)
-                .portfolioId(order.getPortfolioId())
-                .orderType(order.getOrderType().getAbbreviation())
-                .securityId(order.getSecurityId())
-                .quantity(order.getQuantity())
-                .limitPrice(order.getLimitPrice())
-                .build();
-
-        // Call external service (this should be quick)
+        // No transaction: External service call
         Integer tradeOrderId = callTradeService(order);
         if (tradeOrderId == null) {
             return null;
         }
 
-        // Update order status efficiently
-        updateOrderAfterSubmission(order, tradeOrderId);
+        // Transaction 2: Update order (short, write)
+        updateOrderInWriteTransaction(id, tradeOrderId);
 
-        // Return the updated order
-        Order updatedOrder = orderRepository.findById(id).orElseThrow();
+        // Load and return the updated order
+        Order updatedOrder = loadOrderInReadTransaction(id);
         return toOrderDTO(updatedOrder);
+    }
+
+    /**
+     * Load an order in a read-only transaction with short timeout.
+     * Validates that the order is in NEW status and ready for submission.
+     * 
+     * @param id The order ID to load
+     * @return Order entity if found and valid, null otherwise
+     */
+    @Transactional(readOnly = true, timeout = 3)
+    private Order loadOrderInReadTransaction(Integer id) {
+        Order order = orderRepository.findById(id).orElse(null);
+        if (order == null) {
+            logger.warn("Order {} not found", id);
+            return null;
+        }
+
+        if (!order.getStatus().getAbbreviation().equals("NEW")) {
+            logger.warn("Order {} is not in NEW status: {}", id, order.getStatus().getAbbreviation());
+            return null;
+        }
+
+        logger.debug("Loaded order {} in read transaction", id);
+        return order;
+    }
+
+    /**
+     * Update an order with trade service results in a write transaction with short timeout.
+     * Sets the order status to SENT and records the trade order ID.
+     * 
+     * @param id The order ID to update
+     * @param tradeOrderId The trade order ID from the trade service
+     */
+    @Transactional(timeout = 5)
+    private void updateOrderInWriteTransaction(Integer id, Integer tradeOrderId) {
+        Order order = orderRepository.findById(id).orElseThrow(
+            () -> new RuntimeException("Order " + id + " not found during update")
+        );
+
+        Status sentStatus = getSentStatus();
+
+        Order updatedOrder = Order.builder()
+                .id(order.getId())
+                .blotter(order.getBlotter())
+                .status(sentStatus)
+                .portfolioId(order.getPortfolioId())
+                .orderType(order.getOrderType())
+                .securityId(order.getSecurityId())
+                .quantity(order.getQuantity())
+                .limitPrice(order.getLimitPrice())
+                .tradeOrderId(tradeOrderId)
+                .orderTimestamp(order.getOrderTimestamp())
+                .version(order.getVersion())
+                .build();
+
+        orderRepository.save(updatedOrder);
+        logger.debug("Updated order {} with tradeOrderId {} in write transaction", id, tradeOrderId);
     }
 
     /**
      * Submit multiple orders in batch to the trade service using bulk submission.
      * This method uses a single bulk API call to the trade service for improved performance,
      * replacing the previous individual order processing approach.
+     * 
+     * Transaction boundaries are optimized to minimize connection hold time:
+     * 1. Load orders in read-only transaction (3s timeout)
+     * 2. Call external trade service (no transaction)
+     * 3. Update order statuses in write transaction (5s timeout)
      * 
      * @param orderIds List of order IDs to submit
      * @return BatchSubmitResponseDTO containing results for each order
@@ -482,36 +543,7 @@ public class OrderService {
         return null;
     }
 
-    /**
-     * Update order status to SENT and set tradeOrderId after successful trade
-     * service submission.
-     * Uses cached status lookup to minimize database queries.
-     * 
-     * @param order        The order to update
-     * @param tradeOrderId The trade order ID returned from the trade service
-     */
-    private void updateOrderAfterSubmission(Order order, Integer tradeOrderId) {
-        // Use cached validation service to get SENT status efficiently
-        Status sentStatus = getSentStatus();
 
-        Order updatedOrder = Order.builder()
-                .id(order.getId())
-                .blotter(order.getBlotter())
-                .status(sentStatus)
-                .portfolioId(order.getPortfolioId())
-                .orderType(order.getOrderType())
-                .securityId(order.getSecurityId())
-                .quantity(order.getQuantity())
-                .limitPrice(order.getLimitPrice())
-                .tradeOrderId(tradeOrderId)
-                .orderTimestamp(order.getOrderTimestamp())
-                .version(order.getVersion())
-                .build();
-
-        orderRepository.save(updatedOrder);
-        logger.debug("Updated order {} with tradeOrderId {} and SENT status",
-                order.getId(), tradeOrderId);
-    }
 
     // Cache for SENT status to avoid repeated database lookups
     private volatile Status cachedSentStatus;
@@ -539,6 +571,8 @@ public class OrderService {
     /**
      * Load and validate orders for bulk submission.
      * Efficiently loads orders in batch and filters them for bulk submission eligibility.
+     * Uses read-only transaction with 3-second timeout to minimize connection hold time.
+     * This method completes BEFORE the external trade service call.
      * 
      * @param orderIds List of order IDs to load and validate
      * @return List of valid orders ready for bulk submission
@@ -1123,7 +1157,8 @@ public class OrderService {
     /**
      * Update order statuses from bulk response using efficient batch operations.
      * Handles partial success scenarios where some orders succeed and others fail.
-     * Uses simplified transaction management for improved performance.
+     * Uses write transaction with 5-second timeout for optimal connection management.
+     * This method is called AFTER the external trade service call completes (outside transaction).
      * 
      * @param orders List of orders that were submitted in the bulk request
      * @param bulkResponse The bulk response from the trade service
