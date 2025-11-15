@@ -383,7 +383,8 @@ public class OrderService {
             long transformDuration = System.currentTimeMillis() - transformStartTime;
 
             // Log comprehensive completion metrics and update performance tracking
-            long overallDuration = (long) overallTimer.stop(bulkSubmissionTimer);
+            long overallDurationNanos = (long) overallTimer.stop(bulkSubmissionTimer);
+            long overallDuration = System.currentTimeMillis() - overallStartTime;
             double successRate = response.getTotalRequested() > 0 ? 
                     (double) response.getSuccessful() / response.getTotalRequested() * 100 : 0;
             
@@ -397,9 +398,9 @@ public class OrderService {
             performanceMonitor.recordBulkSubmission(orderIds.size(), overallDuration, response.getSuccessful());
             
             // Summary log instead of detailed per-step logs
-            logger.info("BULK_SUBMISSION: Completed in {}ms - {} successful, {} failed out of {} total (success_rate: {:.2f}%), thread={}",
+            logger.info("BULK_SUBMISSION: Completed in {}ms - {} successful, {} failed out of {} total (success_rate: {}%), thread={}",
                     overallDuration, response.getSuccessful(), response.getFailed(), response.getTotalRequested(),
-                    successRate, threadName);
+                    String.format("%.2f", successRate), threadName);
 
             // Detailed performance breakdown only in debug mode
             if (logger.isDebugEnabled()) {

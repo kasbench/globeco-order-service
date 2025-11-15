@@ -18,7 +18,7 @@ spec:
       containers:
         - name: globeco-order-service
           image: kasbench/globeco-order-service:1.0.2
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
           env:

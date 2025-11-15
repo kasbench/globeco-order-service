@@ -61,7 +61,7 @@ public class BatchUpdateService {
 
         try {
             // SQL for batch update with optimistic locking
-            String sql = "UPDATE orders SET status_id = ?, trade_order_id = ?, version = version + 1 " +
+            String sql = "UPDATE \"order\" SET status_id = ?, trade_order_id = ?, version = version + 1 " +
                         "WHERE id = ? AND version = ?";
 
             // Process orders in batches to optimize memory usage
@@ -99,24 +99,28 @@ public class BatchUpdateService {
                         });
 
                 // Validate update counts and handle optimistic locking failures
+                // updateCounts is int[][] where outer array is batches, inner array is statements per batch
                 int batchUpdated = 0;
-                for (int i = 0; i < updateCounts.length; i++) {
-                    int[] batchResult = updateCounts[i];
-                    int updateCount = batchResult.length > 0 ? batchResult[0] : 0;
-                    Order order = batch.get(i);
-                    
-                    if (updateCount == 1) {
-                        batchUpdated++;
-                    } else if (updateCount == 0) {
-                        logger.error("BATCH_UPDATE: Optimistic locking failure for order {} - version mismatch (expected version: {}), thread={}",
-                                order.getId(), order.getVersion(), threadName);
-                        throw new RuntimeException(String.format(
-                                "Optimistic locking failure for order %d - version mismatch", order.getId()));
-                    } else {
-                        logger.error("BATCH_UPDATE: Unexpected update count {} for order {}, thread={}",
-                                updateCount, order.getId(), threadName);
-                        throw new RuntimeException(String.format(
-                                "Unexpected update count %d for order %d", updateCount, order.getId()));
+                if (updateCounts.length > 0 && updateCounts[0] != null) {
+                    int[] counts = updateCounts[0]; // Get the first (and only) batch result
+                    for (int i = 0; i < counts.length; i++) {
+                        int updateCount = counts[i];
+                        
+                        if (updateCount == 1) {
+                            batchUpdated++;
+                        } else if (updateCount == 0) {
+                            Order order = batch.get(i);
+                            logger.error("BATCH_UPDATE: Optimistic locking failure for order {} - version mismatch (expected version: {}), thread={}",
+                                    order.getId(), order.getVersion(), threadName);
+                            throw new RuntimeException(String.format(
+                                    "Optimistic locking failure for order %d - version mismatch", order.getId()));
+                        } else {
+                            Order order = batch.get(i);
+                            logger.error("BATCH_UPDATE: Unexpected update count {} for order {}, thread={}",
+                                    updateCount, order.getId(), threadName);
+                            throw new RuntimeException(String.format(
+                                    "Unexpected update count %d for order %d", updateCount, order.getId()));
+                        }
                     }
                 }
 
