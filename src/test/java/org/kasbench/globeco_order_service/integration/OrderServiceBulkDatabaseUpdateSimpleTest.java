@@ -157,7 +157,7 @@ class OrderServiceBulkDatabaseUpdateSimpleTest {
         try {
             return new OrderService(
                     null, null, null, null, null, null, null, null, null, null,
-                    "http://test-service", 5000
+                    null, null, null, "http://test-service"
             );
         } catch (Exception e) {
             // If constructor fails, return null - tests will handle gracefully

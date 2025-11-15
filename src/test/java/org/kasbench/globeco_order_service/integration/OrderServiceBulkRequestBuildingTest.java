@@ -74,8 +74,10 @@ public class OrderServiceBulkRequestBuildingTest {
                 null, // portfolioServiceClient - not used in buildBulkTradeOrderRequest
                 null, // securityServiceClient - not used in buildBulkTradeOrderRequest
                 null, // transactionManager - not used in buildBulkTradeOrderRequest
-                "http://test-trade-service:8082",
-                5000
+                null, // meterRegistry - not used in buildBulkTradeOrderRequest
+                null, // performanceMonitor - not used in buildBulkTradeOrderRequest
+                null, // batchUpdateService - not used in buildBulkTradeOrderRequest
+                "http://test-trade-service:8082"
         );
     }
 

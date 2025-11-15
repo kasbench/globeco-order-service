@@ -82,6 +82,7 @@ public class OrderService {
     private final TransactionTemplate readOnlyTransactionTemplate;
     private final String tradeServiceUrl;
     private final BulkSubmissionPerformanceMonitor performanceMonitor;
+    private final BatchUpdateService batchUpdateService;
     
     // Performance monitoring metrics
     private final MeterRegistry meterRegistry;
@@ -110,6 +111,7 @@ public class OrderService {
             PlatformTransactionManager transactionManager,
             MeterRegistry meterRegistry,
             BulkSubmissionPerformanceMonitor performanceMonitor,
+            BatchUpdateService batchUpdateService,
             @Value("${trade.service.url:http://globeco-trade-service:8082}") String tradeServiceUrl) {
         this.orderRepository = orderRepository;
         this.statusRepository = statusRepository;
@@ -123,6 +125,7 @@ public class OrderService {
         this.tradeServiceUrl = tradeServiceUrl;
         this.meterRegistry = meterRegistry;
         this.performanceMonitor = performanceMonitor;
+        this.batchUpdateService = batchUpdateService;
 
         // Create transaction templates for precise control
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -1291,48 +1294,33 @@ public class OrderService {
                     }
                 }
                 
-                // Perform batch updates for successful orders with error handling and optimization
+                // Perform batch updates for successful orders using JDBC batch operations
                 if (!successfulOrders.isEmpty()) {
                     try {
-                        logger.debug("BULK_STATUS_UPDATE: Performing batch database update for {} successful orders, thread={}",
+                        logger.debug("BULK_STATUS_UPDATE: Performing JDBC batch database update for {} successful orders, thread={}",
                                 successfulOrders.size(), threadName);
                         
                         long dbStartTime = System.currentTimeMillis();
                         
-                        // Use batch processing for large updates to optimize memory and performance
-                        final int BATCH_SIZE = 50; // Optimal batch size for database operations
-                        if (successfulOrders.size() > BATCH_SIZE) {
-                            logger.debug("BULK_STATUS_UPDATE: Processing {} orders in batches of {}, thread={}",
-                                    successfulOrders.size(), BATCH_SIZE, threadName);
-                            
-                            for (int i = 0; i < successfulOrders.size(); i += BATCH_SIZE) {
-                                int endIndex = Math.min(i + BATCH_SIZE, successfulOrders.size());
-                                List<Order> batch = successfulOrders.subList(i, endIndex);
-                                orderRepository.saveAll(batch);
-                                
-                                logger.debug("BULK_STATUS_UPDATE: Processed batch {}-{} of {} orders, thread={}",
-                                        i + 1, endIndex, successfulOrders.size(), threadName);
-                            }
-                        } else {
-                            orderRepository.saveAll(successfulOrders);
-                        }
+                        // Use BatchUpdateService for efficient JDBC batch updates
+                        int updatedCount = batchUpdateService.batchUpdateOrderStatuses(successfulOrders, sentStatus);
                         
                         long dbDuration = System.currentTimeMillis() - dbStartTime;
                         
-                        logger.debug("BULK_STATUS_UPDATE: Successfully updated {} orders to SENT status with trade order IDs in {}ms, thread={}",
-                                successfulOrders.size(), dbDuration, threadName);
+                        logger.debug("BULK_STATUS_UPDATE: Successfully updated {} orders to SENT status with trade order IDs in {}ms using JDBC batch, thread={}",
+                                updatedCount, dbDuration, threadName);
                         
                         // Log performance metrics for database operations
-                        if (successfulOrders.size() > 0) {
-                            double avgDbTimePerOrder = (double) dbDuration / successfulOrders.size();
-                            logger.debug("BULK_STATUS_UPDATE_PERFORMANCE: Database batch update: {} orders in {}ms (avg {:.2f}ms per order), thread={}",
-                                    successfulOrders.size(), dbDuration, avgDbTimePerOrder, threadName);
+                        if (updatedCount > 0) {
+                            double avgDbTimePerOrder = (double) dbDuration / updatedCount;
+                            logger.debug("BULK_STATUS_UPDATE_PERFORMANCE: JDBC batch update: {} orders in {}ms (avg {:.2f}ms per order), thread={}",
+                                    updatedCount, dbDuration, avgDbTimePerOrder, threadName);
                         }
                         
                     } catch (Exception e) {
-                        logger.error("BULK_STATUS_UPDATE: Failed to perform batch database update for {} orders, thread={}, error={}",
+                        logger.error("BULK_STATUS_UPDATE: Failed to perform JDBC batch database update for {} orders, thread={}, error={}",
                                 successfulOrders.size(), threadName, e.getMessage(), e);
-                        throw new RuntimeException("Batch database update failed", e);
+                        throw new RuntimeException("JDBC batch database update failed", e);
                     }
                 } else {
                     logger.warn("BULK_STATUS_UPDATE: No successful orders to update in database, thread={}", threadName);

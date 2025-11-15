@@ -90,6 +90,7 @@ public class OrderServiceTest {
         // Manually create OrderService with mocked dependencies
         MeterRegistry meterRegistry = mock(MeterRegistry.class);
         BulkSubmissionPerformanceMonitor performanceMonitor = mock(BulkSubmissionPerformanceMonitor.class);
+        BatchUpdateService batchUpdateService = mock(BatchUpdateService.class);
         
         // Mock the meter registry to return mock timers and counters
         when(meterRegistry.timer(any(String.class))).thenReturn(mock(Timer.class));
@@ -108,6 +109,7 @@ public class OrderServiceTest {
                 transactionManager,
                 meterRegistry,
                 performanceMonitor,
+                batchUpdateService,
                 "http://test-trade-service:8082"
         );
         

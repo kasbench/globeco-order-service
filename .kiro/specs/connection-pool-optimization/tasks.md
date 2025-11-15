@@ -34,7 +34,7 @@
     - Use write transaction only for status updates
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 5. Implement JDBC batch updates for order status changes
+- [x] 5. Implement JDBC batch updates for order status changes
   - Create `BatchUpdateService.java` with JDBC batch update method
   - Implement `batchUpdateOrderStatuses()` using JdbcTemplate with PreparedStatement batching
   - Update `OrderService.updateOrderStatusesFromBulkResponse()` to use batch updates

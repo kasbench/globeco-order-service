@@ -34,6 +34,9 @@ public class OrderServiceBulkResponseTransformationTest {
     @Mock private PortfolioServiceClient portfolioServiceClient;
     @Mock private SecurityServiceClient securityServiceClient;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    @Mock private BulkSubmissionPerformanceMonitor performanceMonitor;
+    @Mock private BatchUpdateService batchUpdateService;
     
     private OrderService orderService;
 
@@ -51,8 +54,10 @@ public class OrderServiceBulkResponseTransformationTest {
                 portfolioServiceClient,
                 securityServiceClient,
                 transactionManager,
-                "http://test-trade-service:8082",
-                5000
+                meterRegistry,
+                performanceMonitor,
+                batchUpdateService,
+                "http://test-trade-service:8082"
         );
     }
 

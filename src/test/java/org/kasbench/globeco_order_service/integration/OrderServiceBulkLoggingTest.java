@@ -54,13 +54,15 @@ public class OrderServiceBulkLoggingTest {
     @Mock private PortfolioServiceClient portfolioServiceClient;
     @Mock private SecurityServiceClient securityServiceClient;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    @Mock private BulkSubmissionPerformanceMonitor performanceMonitor;
+    @Mock private BatchUpdateService batchUpdateService;
 
     private OrderService orderService;
     private ListAppender<ILoggingEvent> logAppender;
     private Logger logger;
 
     private static final String TRADE_SERVICE_URL = "http://test-trade-service:8082";
-    private static final int TRADE_SERVICE_TIMEOUT = 5000;
 
     @BeforeEach
     void setUp() {
@@ -88,8 +90,10 @@ public class OrderServiceBulkLoggingTest {
                 portfolioServiceClient,
                 securityServiceClient,
                 transactionManager,
-                TRADE_SERVICE_URL,
-                TRADE_SERVICE_TIMEOUT
+                meterRegistry,
+                performanceMonitor,
+                batchUpdateService,
+                TRADE_SERVICE_URL
         );
     }
 
