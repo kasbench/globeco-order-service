@@ -1,6 +1,6 @@
 docker buildx build --platform linux/amd64,linux/arm64 \
 -t kasbench/globeco-order-service:latest \
--t kasbench/globeco-order-service:1.0.2 \
+-t kasbench/globeco-order-service:1.0.3 \
 --push .
 kubectl delete -f k8s/deployment.yaml
 kubectl apply -f k8s/deployment.yaml

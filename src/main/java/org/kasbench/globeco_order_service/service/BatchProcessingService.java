@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.Timer;
 import org.kasbench.globeco_order_service.dto.OrderPostDTO;
 import org.kasbench.globeco_order_service.dto.OrderPostResponseDTO;
 import org.kasbench.globeco_order_service.dto.OrderListResponseDTO;
+import org.kasbench.globeco_order_service.exception.SystemOverloadException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -85,8 +86,12 @@ public class BatchProcessingService {
         // Check circuit breaker before processing
         if (!circuitBreaker.allowOperation()) {
             logger.error("Circuit breaker OPEN - rejecting batch of {} orders to protect system", orders.size());
-            return OrderListResponseDTO.validationFailure(
-                "System temporarily overloaded - please retry in a few minutes");
+            // Throw SystemOverloadException to return 503 status code instead of 400
+            throw new SystemOverloadException(
+                "System temporarily overloaded - please retry in a few minutes",
+                180, // 3 minutes retry delay
+                "circuit_breaker_open"
+            );
         }
         
         List<OrderPostResponseDTO> allResults = new ArrayList<>();
