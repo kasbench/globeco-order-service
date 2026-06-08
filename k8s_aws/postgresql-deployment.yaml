@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: globeco-order-service-postgresql-headless
+  namespace: globeco
+spec:
+  clusterIP: None
+  selector:
+    app: globeco-order-service-postgresql
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: globeco-order-service-postgresql
+  namespace: globeco
+spec:
+  serviceName: globeco-order-service-postgresql-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: globeco-order-service-postgresql
+  template:
+    metadata:
+      labels:
+        app: globeco-order-service-postgresql
+    spec:
+      volumes:
+        - name: globeco-order-service-postgresdb-storage
+          persistentVolumeClaim:
+            claimName: order-service-postgres-pvc
+      initContainers:
+        - name: init-postgres-data
+          image: busybox:1.35
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              mkdir -p /mnt/postgres-data/pgdata
+              chown -R 999:999 /mnt/postgres-data
+              chmod 755 /mnt/postgres-data
+              chmod 700 /mnt/postgres-data/pgdata
+          volumeMounts:
+            - name: globeco-order-service-postgresdb-storage
+              mountPath: /mnt/postgres-data
+      containers:
+        - name: globeco-order-service-postgresql
+          image: postgres:18.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: "trust"
+            - name: PGDATA
+              value: "/mnt/postgres-data/pgdata"
+          args:
+            - "-c"
+            - "listen_addresses=0.0.0.0"
+            - "-c"
+            - "max_connections=500"
+            - "-c"
+            - "shared_buffers=512MB"
+            - "-c"
+            - "effective_cache_size=1536MB"
+            - "-c"
+            - "maintenance_work_mem=128MB"
+            - "-c"
+            - "checkpoint_completion_target=0.9"
+            - "-c"
+            - "wal_buffers=16MB"
+            - "-c"
+            - "default_statistics_target=100"
+            - "-c"
+            - "random_page_cost=1.1"
+            - "-c"
+            - "effective_io_concurrency=200"
+            - "-c"
+            - "work_mem=2621kB"
+            - "-c"
+            - "min_wal_size=1GB"
+            - "-c"
+            - "max_wal_size=4GB"
+          volumeMounts:
+            - name: globeco-order-service-postgresdb-storage
+              mountPath: /mnt/postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: globeco-order-service-postgresql
+  namespace: globeco
+spec:
+  selector:
+    app: globeco-order-service-postgresql
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP 
