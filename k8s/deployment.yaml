@@ -17,7 +17,7 @@ spec:
       nodeName: "node-5"
       containers:
         - name: globeco-order-service
-          image: kasbench/globeco-order-service:1.0.3
+          image: kasbench/globeco-order-service:1.0.4
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
@@ -116,24 +116,24 @@ spec:
             httpGet:
               path: /actuator/health/liveness
               port: 8081
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 240
-            failureThreshold: 10
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 5
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: 8081
-            initialDelaySeconds: 30
-            periodSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 5
             timeoutSeconds: 5
-            failureThreshold: 3
-          # startupProbe:
-          #   httpGet:
-          #     path: /actuator/health/readiness
-          #     port: 8081
-          #   initialDelaySeconds: 30
-          #   periodSeconds: 10
-          #   timeoutSeconds: 5
-          #   failureThreshold: 30
+            failureThreshold: 5
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
       restartPolicy: Always 
