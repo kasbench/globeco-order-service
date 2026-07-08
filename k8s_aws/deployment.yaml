@@ -31,11 +31,11 @@ spec:
             - name: METRICS_CUSTOM_ENABLED
               value: "true"
             - name: METRICS_CUSTOM_HTTP_ENABLED
-              value: "false"
+              value: "true"
             - name: METRICS_CUSTOM_HTTP_REQUEST_ENABLED
-              value: "false"
+              value: "true"
             - name: METRICS_CUSTOM_DATABASE_ENABLED
-              value: "false"
+              value: "true"
             - name: SECURITY_SERVICE_URL
               value: "http://globeco-security-service:8000"
             - name: PORTFOLIO_SERVICE_URL
