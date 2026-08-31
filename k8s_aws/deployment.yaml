@@ -15,6 +15,19 @@ spec:
       labels:
         app: globeco-order-service
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:18.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until pg_isready -h globeco-order-service-postgresql -p 5432 -U postgres; do
+                echo "Waiting for PostgreSQL to be ready..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready."
       containers:
         - name: globeco-order-service
           image: kasbench/globeco-order-service:1.0.4
