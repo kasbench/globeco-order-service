@@ -8,6 +8,16 @@ metadata:
 spec:
   {{- if eq .Values.autoscaler "vpa" }}
   replicas: 2
+  {{- else if eq .Values.autoscaler "horizontal-2" }}
+  replicas: 2
+  {{- else if eq .Values.autoscaler "horizontal-3" }}
+  replicas: 3
+  {{- else if eq .Values.autoscaler "horizontal-4" }}
+  replicas: 4
+  {{- else if eq .Values.autoscaler "horizontal-5" }}
+  replicas: 5
+  {{- else if eq .Values.autoscaler "horizontal-6" }}
+  replicas: 6
   {{- else }}
   replicas: 1
   {{- end }}
@@ -139,11 +149,22 @@ spec:
               restartPolicy: RestartContainer
           resources:
             requests:
-              cpu: "1000m"
               memory: "700Mi"
+              {{- if eq .Values.autoscaler "vertical-2" }}
+              cpu: "627.0m"
+              {{- else if eq .Values.autoscaler "vertical-3" }}
+              cpu: "836.0m"
+              {{- else if eq .Values.autoscaler "vertical-4" }}
+              cpu: "1045.0m"
+              {{- else if eq .Values.autoscaler "vertical-5" }}
+              cpu: "1254.0m"
+              {{- else if eq .Values.autoscaler "vertical-6" }}
+              cpu: "1463.0m"
+              {{- else }}
+              cpu: "418m"
+              {{- end }}
             limits:
-              cpu: "1000m"
-              memory: "700Mi"
+              memory: "6000Mi"
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
